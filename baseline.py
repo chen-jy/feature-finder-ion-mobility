@@ -91,7 +91,7 @@ def find_local_maxima_indices(feature_arrays):
             max_int_pt_idxs.append(pt_idx)
         else:
             max_ints.append(0)
-            max_int_pt_idxs.append(0)
+            max_int_pt_idxs.append(None)
 
     max_ints, max_int_pt_idxs = np.array(max_ints), np.array(max_int_pt_idxs)
 
@@ -111,7 +111,8 @@ def link_to_peak(
     possible_species, \
     species_counter, \
     rt_idx_to_rt, \
-    epsilon=0.003):
+    mz_epsilon, \
+    im_epsilon):
     if rt_idx_to_num_points_left[rt_idx] > 0:
         peak = rt_idx_to_points[rt_idx].pop(pt_idx)
         possible_species[species_counter] = [[rt_idx_to_rt[rt_idx]], [peak]]
@@ -130,8 +131,8 @@ def link_to_peak(
             for i in range(len(rt_idx_to_points[walk_idx])):
                 point = rt_idx_to_points[walk_idx][i]
 
-                if peak[0] - epsilon <= point[0] <= peak[0] + epsilon \
-                and peak[1] - epsilon <= point[1] <= peak[1] + epsilon \
+                if peak[0] - mz_epsilon <= point[0] <= peak[0] + mz_epsilon \
+                and peak[1] - im_epsilon <= point[1] <= peak[1] + im_epsilon \
                 and point[2] <= peak[2] and point[3] == peak[3] \
                 and point[2] < prev_val:
                     point = rt_idx_to_points[walk_idx].pop(i)
@@ -164,8 +165,8 @@ def link_to_peak(
             for i in range(len(rt_idx_to_points[walk_idx])):
                 point = rt_idx_to_points[walk_idx][i]
 
-                if peak[0] - epsilon <= point[0] <= peak[0] + epsilon \
-                and peak[1] - epsilon <= point[1] <= peak[1] + epsilon \
+                if peak[0] - mz_epsilon <= point[0] <= peak[0] + mz_epsilon \
+                and peak[1] - im_epsilon <= point[1] <= peak[1] + im_epsilon \
                 and point[2] <= peak[2] and point[3] == peak[3] \
                 and point[2] < prev_val:
                     point = rt_idx_to_points[walk_idx].pop(i)
@@ -185,7 +186,7 @@ def link_to_peak(
                 else:
                     walk_idx+= 1
 
-def link_between_frames(feature_maps, rt_idx_to_rt):
+def link_between_frames(feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
     rt_idx_to_points = []
     rt_idx_to_num_points_left, possible_species = {}, {}
     num_unclassified, species_counter = None, 0
@@ -222,8 +223,9 @@ def link_between_frames(feature_maps, rt_idx_to_rt):
                 rt_idx_to_num_points_left, \
                 possible_species, \
                 species_counter, \
-                rt_idx_to_rt, 
-                epsilon=0.003)
+                rt_idx_to_rt, \
+                mz_epsilon, \
+                im_epsilon)
 
             species_counter+= 1
 
@@ -235,14 +237,10 @@ def link_between_frames(feature_maps, rt_idx_to_rt):
             possible_species[species_counter] = [[rt_idx_to_rt[key]], [point]]
             species_counter+= 1
 
-    print(str(species_counter) + "\r\n")
-    for species in possible_species:
-        print(str(species) + ": " + str(possible_species[species]) + "\r\n")
-
     return possible_species
 
 def search_through_all_frames(
-    target_feature_map_idxs, feature_maps, rt_idx_to_rt, epsilon=0.003):
+    target_feature_map_idxs, feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
     rt_idx_to_points = []
 
     for i in range(len(feature_maps)):
@@ -276,8 +274,8 @@ def search_through_all_frames(
                 for l in range(len(points)):
                     point = points[l]
 
-                    if precursor[0] - epsilon <= point[0] <= precursor[0] + epsilon \
-                    and precursor[1] - epsilon <= point[1] <= precursor[1] + epsilon \
+                    if precursor[0] - mz_epsilon <= point[0] <= precursor[0] + mz_epsilon \
+                    and precursor[1] - im_epsilon <= point[1] <= precursor[1] + im_epsilon \
                     and point[3] == precursor[3] \
                     and point not in possible_precursors[precursor_counter][1]:
                         possible_precursors[precursor_counter][0].append(k)
@@ -285,23 +283,29 @@ def search_through_all_frames(
 
             precursor_counter+= 1
 
-    print(str(precursor_counter) + "\r\n")
-    for precursor in possible_precursors:
-        print(str(precursor) + ": " + str(possible_precursors[precursor]) + "\r\n")
-
     return possible_precursors
 
-def link_frag_to_prec(possible_species, possible_precursors):
-    feature_groups, avg_precursors, avg_species = {}, {}, {}
+def split_precursors_and_fragments(possible_species, window_size):
+    precursors, fragments = {}, {}
+    precursor_counter, fragment_counter = 0, 0
 
-    for precursor in possible_precursors:
-        pass
+    for species in possible_species:
+        rts = possible_species[species][0]
 
-    for precursor in possible_precursors:
-        rts, vals = possible_precursors[precursor]
+        if len(rts) > 2:
+            for rt in rts:
+                if rt % window_size == 0:
+                    precursors[precursor_counter] = possible_species[species]
+                    precursor_counter+= 1
+                    break
+                else:
+                    fragments[fragment_counter] = possible_species[species]
+                    fragment_counter+= 1
+                    break
 
-        for rt in rts:
-            pass
+    return precursors, fragments
+
+def link_frag_to_prec(fragments, precursors):
     pass
 
 def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
@@ -351,7 +355,8 @@ def driver(args):
 
     with open('frames.txt', 'w') as infile:
         for i in range(0, 17):
-            for j in range(i, 282, 17):
+            for j in range(i, args.num_frames, 17):
+            # for j in range(i, 85, 17):
                 infile.write(str(j) + "\r\n")
                 features = ms.FeatureMap()
                 ms.FeatureXMLFile().load(str(j) + args.infile, features)
@@ -363,25 +368,36 @@ def driver(args):
                 rt_idx_to_rt[counter] = j
                 counter+= 1
 
-    link_between_frames(feature_maps, rt_idx_to_rt)
+    possible_species = link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
     plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    target_feature_map_idxs, feature_maps = [], []
-    rt_idx_to_rt = {}
-    counter = 0
+    # target_feature_map_idxs, feature_maps = [], []
+    # rt_idx_to_rt = {}
+    # counter = 0
 
-    for i in range(0, 282, 17):
-        target_feature_map_idxs.append(i)
+    # for i in range(0, 282, 17):
+    #     target_feature_map_idxs.append(i)
 
-    for i in range(0, 282):
-        features = ms.FeatureMap()
-        ms.FeatureXMLFile().load(str(i) + args.infile, features)
-        feature_maps.append(features)
-        rt_idx_to_rt[counter] = i
-        counter+= 1
+    # for i in range(0, 282):
+    #     features = ms.FeatureMap()
+    #     ms.FeatureXMLFile().load(str(i) + args.infile, features)
+    #     feature_maps.append(features)
+    #     rt_idx_to_rt[counter] = i
+    #     counter+= 1
 
-    plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
-    search_through_all_frames(target_feature_map_idxs, feature_maps, rt_idx_to_rt)
+    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    # search_through_all_frames(
+    #   target_feature_map_idxs, feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+
+    precursors, fragments = split_precursors_and_fragments(possible_species, args.window_size)
+
+    print(str(len(precursors)) + "\r\n")
+    for precursor in precursors:
+        print(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+
+    print(str(len(fragments)) + "\r\n")
+    for fragment in fragments:
+        print(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
 
 if __name__ == "__main__":
@@ -389,6 +405,10 @@ if __name__ == "__main__":
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
+    parser.add_argument('--mz_epsilon', action='store', required=True, type=float)
+    parser.add_argument('--im_epsilon', action='store', required=True, type=float)
+    parser.add_argument('--num_frames', action='store', required=True, type=int)
+    parser.add_argument('--window_size', action='store', required=True, type=int)
 
     args = parser.parse_args()
 
