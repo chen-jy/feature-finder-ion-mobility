@@ -73,6 +73,7 @@ def run_feature_finder_centroided_on_experiment(input_map):
     features = ms.FeatureMap()
     seeds = ms.FeatureMap()
     params = ms.FeatureFinder().getParameters(name)
+    params.__setitem__(b'intensity:bins', 1)
     ff.run(name, input_map, features, params, seeds)
 
     features.setUniqueIds()
@@ -80,6 +81,16 @@ def run_feature_finder_centroided_on_experiment(input_map):
     return features
 
 def find_local_maxima_indices(feature_arrays):
+    """Function that finds local intensity maxima.
+
+    Args:
+        feature_arrays: Array of arrays of points.
+
+    Returns:
+        Array of tuples, where the first element is
+        the index of the maxima, and the second element
+        is the point index.
+    """
     max_ints, max_int_pt_idxs = [], []
 
     for i in range(len(feature_arrays)):
@@ -113,6 +124,9 @@ def link_to_peak(
     rt_idx_to_rt, \
     mz_epsilon, \
     im_epsilon):
+    """Function links points adjacent to a local maximum.
+       Tries to link everything in a peak shape (e.g. decreasing on both sides)
+    """
     if rt_idx_to_num_points_left[rt_idx] > 0:
         peak = rt_idx_to_points[rt_idx].pop(pt_idx)
         possible_species[species_counter] = [[rt_idx_to_rt[rt_idx]], [peak]]
@@ -187,6 +201,8 @@ def link_to_peak(
                     walk_idx+= 1
 
 def link_between_frames(feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
+    """Function that extracts possible species of targets from feature maps.
+    """
     rt_idx_to_points = []
     rt_idx_to_num_points_left, possible_species = {}, {}
     num_unclassified, species_counter = None, 0
@@ -239,60 +255,17 @@ def link_between_frames(feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
 
     return possible_species
 
-def search_through_all_frames(
-    target_feature_map_idxs, feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
-    rt_idx_to_points = []
-
-    for i in range(len(feature_maps)):
-        rt = []
-
-        for feature in feature_maps[i]:
-            point = []
-
-            point.append(feature.getMZ())
-            point.append(feature.getRT())
-            point.append(feature.getIntensity())
-            point.append(feature.getCharge())
-
-            rt.append(point)
-
-        rt_idx_to_points.append(rt)
-
-    possible_precursors = {}
-    precursor_counter = 0
-
-    for i in target_feature_map_idxs:
-        precursors = rt_idx_to_points[i]
-
-        for j in range(len(precursors)):
-            precursor = rt_idx_to_points[i][j]
-            possible_precursors[precursor_counter] = [[i], [precursor]]
-
-            for k in range(i + 1, len(rt_idx_to_points[i + 1:])):
-                points = rt_idx_to_points[k]
-                
-                for l in range(len(points)):
-                    point = points[l]
-
-                    if precursor[0] - mz_epsilon <= point[0] <= precursor[0] + mz_epsilon \
-                    and precursor[1] - im_epsilon <= point[1] <= precursor[1] + im_epsilon \
-                    and point[3] == precursor[3] \
-                    and point not in possible_precursors[precursor_counter][1]:
-                        possible_precursors[precursor_counter][0].append(k)
-                        possible_precursors[precursor_counter][1].append(point)
-
-            precursor_counter+= 1
-
-    return possible_precursors
-
-def split_precursors_and_fragments(possible_species, window_size):
+def split_precursors_and_fragments(possible_species, window_size, rt_length):
+    """Function that splits the list of possible species into precursors and
+    fragments.
+    """
     precursors, fragments = {}, {}
     precursor_counter, fragment_counter = 0, 0
 
     for species in possible_species:
         rts = possible_species[species][0]
 
-        if len(rts) > 2:
+        if len(rts) > rt_length:
             for rt in rts:
                 if rt % window_size == 0:
                     precursors[precursor_counter] = possible_species[species]
@@ -330,7 +303,7 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
         
 def driver(args):
     # exp = ms.MSExperiment()
-    # ms.MzMLFile().load(args.infile, exp)
+    # ms.MzMLFile().load(args.infile + '.mzML', exp)
 
     # counter_to_og_rt_and_mslevel = {}
 
@@ -356,10 +329,9 @@ def driver(args):
     with open('frames.txt', 'w') as infile:
         for i in range(0, 17):
             for j in range(i, args.num_frames, 17):
-            # for j in range(i, 85, 17):
                 infile.write(str(j) + "\r\n")
                 features = ms.FeatureMap()
-                ms.FeatureXMLFile().load(str(j) + args.infile, features)
+                ms.FeatureXMLFile().load(str(j) + '_' + args.outfile + '.FeatureXML', features)
 
                 for feature in features:
                     infile.write(str(feature.getMZ()) + ',' + str(feature.getRT()) + ',' + str(feature.getIntensity()) + "\r\n")
@@ -371,25 +343,8 @@ def driver(args):
     possible_species = link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
     plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    # target_feature_map_idxs, feature_maps = [], []
-    # rt_idx_to_rt = {}
-    # counter = 0
-
-    # for i in range(0, 282, 17):
-    #     target_feature_map_idxs.append(i)
-
-    # for i in range(0, 282):
-    #     features = ms.FeatureMap()
-    #     ms.FeatureXMLFile().load(str(i) + args.infile, features)
-    #     feature_maps.append(features)
-    #     rt_idx_to_rt[counter] = i
-    #     counter+= 1
-
-    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
-    # search_through_all_frames(
-    #   target_feature_map_idxs, feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-
-    precursors, fragments = split_precursors_and_fragments(possible_species, args.window_size)
+    precursors, fragments = split_precursors_and_fragments(
+        possible_species, args.window_size, args.rt_length)
 
     print(str(len(precursors)) + "\r\n")
     for precursor in precursors:
@@ -405,10 +360,11 @@ if __name__ == "__main__":
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
-    parser.add_argument('--mz_epsilon', action='store', required=True, type=float)
-    parser.add_argument('--im_epsilon', action='store', required=True, type=float)
-    parser.add_argument('--num_frames', action='store', required=True, type=int)
-    parser.add_argument('--window_size', action='store', required=True, type=int)
+    parser.add_argument('--mz_epsilon', action='store', required=False, type=float)
+    parser.add_argument('--im_epsilon', action='store', required=False, type=float)
+    parser.add_argument('--num_frames', action='store', required=False, type=int)
+    parser.add_argument('--window_size', action='store', required=False, type=int)
+    parser.add_argument('--rt_length', action='store', required=False, type=int)
 
     args = parser.parse_args()
 
