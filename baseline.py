@@ -2,9 +2,7 @@ import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import pyopenms as ms
-import seaborn as sns
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.signal import argrelextrema
 
@@ -302,25 +300,25 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
     plt.show()
         
 def driver(args):
-    # exp = ms.MSExperiment()
-    # ms.MzMLFile().load(args.infile + '.mzML', exp)
+    exp = ms.MSExperiment()
+    ms.MzMLFile().load(args.infile + '.mzML', exp)
 
-    # counter_to_og_rt_and_mslevel = {}
+    counter_to_og_rt_and_mslevel = {}
 
-    # counter = 0
-    # for spec in exp:
-    #     new_exp = four_d_spectrum_to_experiment(spec)
-    #     ms.MzMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.mzML', new_exp)
+    counter = 0
+    for spec in exp:
+        new_exp = four_d_spectrum_to_experiment(spec)
+        ms.MzMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.mzML', new_exp)
 
-    #     new_features = run_feature_finder_centroided_on_experiment(new_exp)
-    #     ms.FeatureXMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.featureXML', new_features)
+        new_features = run_feature_finder_centroided_on_experiment(new_exp)
+        ms.FeatureXMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.featureXML', new_features)
 
-    #     counter_to_og_rt_and_mslevel[counter] = [spec.getRT(), spec.getMSLevel()]
+        counter_to_og_rt_and_mslevel[counter] = [spec.getRT(), spec.getMSLevel()]
         
-    #     counter+= 1
+        counter+= 1
         
-    # with open(args.outdir + '/counter_to_og_rt_and_mslevel.txt', 'w') as infile:
-    #     infile.write(str(counter_to_og_rt_and_mslevel))
+    with open(args.outdir + '/counter_to_og_rt_and_mslevel.txt', 'w') as infile:
+        infile.write(str(counter_to_og_rt_and_mslevel))
 
     feature_maps = []
     rt_idx_to_rt = {}
@@ -346,13 +344,15 @@ def driver(args):
     precursors, fragments = split_precursors_and_fragments(
         possible_species, args.window_size, args.rt_length)
 
-    print(str(len(precursors)) + "\r\n")
-    for precursor in precursors:
-        print(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+    with open('precursors.txt') as infile:
+        infile.write(str(len(precursors)) + "\r\n")
+        for precursor in precursors:
+            infile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    print(str(len(fragments)) + "\r\n")
-    for fragment in fragments:
-        print(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
+    with open('fragments.txt') as infile:
+        infile.write(str(len(fragments)) + "\r\n")
+        for fragment in fragments:
+            infile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
 
 if __name__ == "__main__":
