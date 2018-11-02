@@ -72,7 +72,10 @@ def run_feature_finder_centroided_on_experiment(input_map):
     features = ms.FeatureMap()
     seeds = ms.FeatureMap()
     params = ms.FeatureFinder().getParameters(name)
-    params.__setitem__(b'intensity:bins', 1)
+    params.__setitem__(b'mass_trace:min_spectra', 5)
+    params.__setitem__(b'mass_trace:max_missing', 2)
+    params.__setitem__(b'seed:min_score', 0.5)
+    params.__setitem__(b'feature:min_score', 0.5)
     ff.run(name, input_map, features, params, seeds)
 
     features.setUniqueIds()
@@ -285,17 +288,21 @@ def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold)
 
         for fragment in fragments:
             fragment_rt_range, fragment_points = fragments[fragment]
-
-            print(fragment_rt_range[0] in precursor_rt_range, np.abs(
-                np.mean(
-                    [x[1] for x in precursor_points]) - np.mean(
-                    [x[1] for x in fragment_points])) <= 10)
-
-            if fragment_rt_range[0] in precursor_rt_range \
+            
+            if min(precursor_rt_range) < fragment_rt_range[0] < max(precursor_rt_range) \
             and np.abs(
                 np.mean(
                     [x[1] for x in precursor_points]) - np.mean(
-                    [x[1] for x in fragment_points])) <= 10:
+                    [x[1] for x in fragment_points])) <= im_epsilon:
+                print(min(precursor_rt_range), fragment_rt_range[0], max(precursor_rt_range), np.mean(
+                        [x[1] for x in precursor_points]), np.mean(
+                        [x[1] for x in fragment_points]))
+
+            if min(precursor_rt_range) < fragment_rt_range[0] < max(precursor_rt_range) \
+            and np.abs(
+                np.mean(
+                    [x[1] for x in precursor_points]) - np.mean(
+                    [x[1] for x in fragment_points])) <= im_epsilon:
                 if precursor not in precursor_to_fragments:
                     precursor_to_fragments[precursor] = [fragment]
                 else:
@@ -353,7 +360,7 @@ def driver(args):
             for j in range(i, args.num_frames, 17):
                 infile.write(str(j) + "\r\n")
                 features = ms.FeatureMap()
-                ms.FeatureXMLFile().load(str(j) + '_' + args.outfile + '.FeatureXML', features)
+                ms.FeatureXMLFile().load(str(j) + '_' + args.outfile + '.featureXML', features)
 
                 for feature in features:
                     infile.write(str(feature.getMZ()) + ',' + str(feature.getRT()) + ',' + str(feature.getIntensity()) + "\r\n")
