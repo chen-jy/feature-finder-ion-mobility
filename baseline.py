@@ -1,10 +1,11 @@
 import argparse
+import pickle
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pyopenms as ms
 from mpl_toolkits.mplot3d import Axes3D
-from scipy import spatial
 from scipy.signal import argrelextrema
 
 
@@ -257,7 +258,8 @@ def link_between_frames(feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
 
     return possible_species
 
-def split_precursors_and_fragments(possible_species, window_size, rt_length):
+def split_precursors_and_fragments(
+    possible_species, window_size, rt_length, counter_to_og_rt_ms_mz):
     """Function that splits the list of possible species into precursors and
     fragments.
     """
@@ -269,7 +271,7 @@ def split_precursors_and_fragments(possible_species, window_size, rt_length):
 
         if len(rts) > rt_length:
             for rt in rts:
-                if rt % window_size == 0:
+                if counter_to_og_rt_ms_mz[rt][1] == 1:
                     precursors[precursor_counter] = possible_species[species]
                     precursor_counter+= 1
                     break
@@ -280,35 +282,37 @@ def split_precursors_and_fragments(possible_species, window_size, rt_length):
 
     return precursors, fragments
 
-def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold):
-    precursor_to_fragments = {}
+def link_frag_to_prec(
+    fragments, precursors, window_size, im_epsilon, threshold,
+    counter_to_og_rt_ms_mz):
+    precursor_to_fragments = defaultdict(list)
 
     for precursor in precursors:
         precursor_rt_range, precursor_points = precursors[precursor]
 
         for fragment in fragments:
             fragment_rt_range, fragment_points = fragments[fragment]
-            
-            if min(precursor_rt_range) < fragment_rt_range[0] < max(precursor_rt_range) \
-            and np.abs(
-                np.mean(
-                    [x[1] for x in precursor_points]) - np.mean(
-                    [x[1] for x in fragment_points])) <= im_epsilon:
-                print(min(precursor_rt_range), fragment_rt_range[0], max(precursor_rt_range), np.mean(
-                        [x[1] for x in precursor_points]), np.mean(
-                        [x[1] for x in fragment_points]))
+            mz, lower, upper = counter_to_og_rt_ms_mz[fragment_rt_range[0]][2:]
 
             if min(precursor_rt_range) < fragment_rt_range[0] < max(precursor_rt_range) \
             and np.abs(
                 np.mean(
                     [x[1] for x in precursor_points]) - np.mean(
-                    [x[1] for x in fragment_points])) <= im_epsilon:
-                if precursor not in precursor_to_fragments:
-                    precursor_to_fragments[precursor] = [fragment]
-                else:
-                    precursor_to_fragments[precursor].append(fragment)
+                    [x[1] for x in fragment_points])) <= im_epsilon \
+            and mz - lower <= np.mean([x[0] for x in precursor_points]) <= mz + upper:
+                precursor_to_fragments[precursor].append(fragment)
 
     return precursor_to_fragments
+
+def get_merged_rt_ms_level_dicts():
+    with open('counter_to_og_rt_ms_mz_from_0.pkl', 'rb') as handle:
+        counter_to_og_rt_ms_mz = pickle.load(handle)
+
+        for i in range(100, 801, 100):
+            with open('counter_to_og_rt_ms_mz_from_' + str(i) + '.pkl', 'rb') as handle:
+                counter_to_og_rt_ms_mz.update(pickle.load(handle))
+
+        return counter_to_og_rt_ms_mz
 
 def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
     rt, mz, im, intensity = [], [], [], []
@@ -321,71 +325,94 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
             intensity.append(feature.getIntensity())
 
     fig = plt.figure()
-    ax = fig.add_subplot(111,projection='3d')
-    line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none', depthshade=0)
+    # ax = fig.add_subplot(111, projection='3d')
+    # line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none', depthshade=0)
+    # ax.set_xlabel('mz')
+    # ax.set_ylabel('rt')
+    # ax.set_zlabel('im')
+
+    ax = fig.add_subplot(111)
+    line = ax.scatter(mz, rt, c=intensity, s=25, marker='.', edgecolors='none')
     ax.set_xlabel('mz')
     ax.set_ylabel('rt')
-    ax.set_zlabel('im')
+
     cb = plt.colorbar(line)
 
     plt.show()
         
 def driver(args):
-    # exp = ms.MSExperiment()
-    # ms.MzMLFile().load(args.infile + '.mzML', exp)
+    exp = ms.MSExperiment()
+    ms.MzMLFile().load(args.infile + '.mzML', exp)
 
-    # counter_to_og_rt_and_mslevel = {}
+    counter_to_og_rt_ms_mz = {}
 
+    start_idx = 800
+    spectra = exp.getSpectra()
+    for i in range(start_idx, start_idx + 33):
+        spec = spectra[i]
+        new_exp = four_d_spectrum_to_experiment(spec)
+        ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
+
+        new_features = run_feature_finder_centroided_on_experiment(new_exp)
+        ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
+
+        counter_to_og_rt_ms_mz[i] = [spec.getRT(), spec.getMSLevel()]
+
+        precursor = spec.getPrecursor()
+
+        if spec.getMSLevel() != 1:
+            counter_to_og_rt_ms_mz[i].append(precursor.getMZ())
+        else:
+            counter_to_og_rt_ms_mz[i].append(0)
+
+        counter_to_og_rt_ms_mz[i].append(precursor.getIsolationWindowLowerOffset())
+        counter_to_og_rt_ms_mz[i].append(precursor.getIsolationWindowUpperOffset())
+
+    with open(args.outdir + '/counter_to_og_rt_ms_mz' + '_from_' + str(start_idx) + '.pkl', 'wb') as handle:
+        pickle.dump(counter_to_og_rt_ms_mz, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # feature_maps = []
+    # rt_idx_to_rt = {}
+    # counter_to_og_rt_ms_mz = get_merged_rt_ms_level_dicts()
     # counter = 0
-    # for spec in exp:
-    #     new_exp = four_d_spectrum_to_experiment(spec)
-    #     ms.MzMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.mzML', new_exp)
 
-    #     new_features = run_feature_finder_centroided_on_experiment(new_exp)
-    #     ms.FeatureXMLFile().store(args.outdir + '/' + str(counter) + '_' + args.outfile + '.featureXML', new_features)
+    # with open('frames.txt', 'w') as infile:
+    #     for i in range(0, 17):
+    #         for j in range(i, args.num_frames, 17):
+    #             infile.write(str(j) + "\r\n")
+    #             features = ms.FeatureMap()
+    #             ms.FeatureXMLFile().load(
+    #                 str(j) + '_' + args.outfile + '.featureXML', features)
 
-    #     counter_to_og_rt_and_mslevel[counter] = [spec.getRT(), spec.getMSLevel()]
-        
-    #     counter+= 1
-        
-    # with open(args.outdir + '/counter_to_og_rt_and_mslevel.txt', 'w') as infile:
-    #     infile.write(str(counter_to_og_rt_and_mslevel))
+    #             for feature in features:
+    #                 infile.write(str(feature.getMZ()) \
+    #                 + ',' + str(feature.getRT()) + ',' \
+    #                 + str(feature.getIntensity()) + "\r\n")
 
-    feature_maps = []
-    rt_idx_to_rt = {}
-    counter = 0
+    #             feature_maps.append(features)
+    #             rt_idx_to_rt[counter] = j
+    #             counter+= 1
 
-    with open('frames.txt', 'w') as infile:
-        for i in range(0, 17):
-            for j in range(i, args.num_frames, 17):
-                infile.write(str(j) + "\r\n")
-                features = ms.FeatureMap()
-                ms.FeatureXMLFile().load(str(j) + '_' + args.outfile + '.featureXML', features)
+    # possible_species = \
+    #     link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+    # # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-                for feature in features:
-                    infile.write(str(feature.getMZ()) + ',' + str(feature.getRT()) + ',' + str(feature.getIntensity()) + "\r\n")
+    # precursors, fragments = split_precursors_and_fragments(
+    #     possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms_mz)
 
-                feature_maps.append(features)
-                rt_idx_to_rt[counter] = j
-                counter+= 1
+    # with open('precursors.txt', 'w') as infile:
+    #     infile.write(str(len(precursors)) + "\r\n")
+    #     for precursor in precursors:
+    #         infile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    possible_species = link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-    plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    # with open('fragments.txt', 'w') as infile:
+    #     infile.write(str(len(fragments)) + "\r\n")
+    #     for fragment in fragments:
+    #         infile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
-    precursors, fragments = split_precursors_and_fragments(
-        possible_species, args.window_size, args.rt_length)
-
-    with open('precursors.txt', 'w') as infile:
-        infile.write(str(len(precursors)) + "\r\n")
-        for precursor in precursors:
-            infile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
-
-    with open('fragments.txt', 'w') as infile:
-        infile.write(str(len(fragments)) + "\r\n")
-        for fragment in fragments:
-            infile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
-
-    print(link_frag_to_prec(fragments, precursors, args.window_size, args.im_epsilon, 0))
+    # print(
+    #     link_frag_to_prec(
+    #         fragments, precursors, args.window_size, args.im_epsilon, 0, counter_to_og_rt_ms_mz))
 
 
 if __name__ == "__main__":
