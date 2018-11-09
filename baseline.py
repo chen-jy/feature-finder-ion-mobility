@@ -8,6 +8,10 @@ import pyopenms as ms
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.signal import argrelextrema
 
+ISOLATION_WINDOWS = \
+    {0: 0, 1: 437.5, 2: 487.5, 3: 537.5, 4: 587.5, 5: 637.5, 6: 687.5, \
+     7: 737.5, 8: 787.5, 9: 837.5, 10: 887.5, 11: 937.5, 12: 987.5, \
+     13: 1037.5, 14: 1087.5, 15: 1137.5, 16: 1187.5}
 
 def four_d_spectrum_to_experiment(spec):
     """Function that converts a 4D spectrum object which contains retention
@@ -259,7 +263,7 @@ def link_between_frames(feature_maps, rt_idx_to_rt, mz_epsilon, im_epsilon):
     return possible_species
 
 def split_precursors_and_fragments(
-    possible_species, window_size, rt_length, counter_to_og_rt_ms_mz):
+    possible_species, window_size, rt_length, counter_to_og_rt_ms):
     """Function that splits the list of possible species into precursors and
     fragments.
     """
@@ -271,7 +275,7 @@ def split_precursors_and_fragments(
 
         if len(rts) > rt_length:
             for rt in rts:
-                if counter_to_og_rt_ms_mz[rt][1] == 1:
+                if counter_to_og_rt_ms[rt][1] == 1:
                     precursors[precursor_counter] = possible_species[species]
                     precursor_counter+= 1
                     break
@@ -282,9 +286,7 @@ def split_precursors_and_fragments(
 
     return precursors, fragments
 
-def link_frag_to_prec(
-    fragments, precursors, window_size, im_epsilon, threshold,
-    counter_to_og_rt_ms_mz):
+def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold):
     precursor_to_fragments = defaultdict(list)
 
     for precursor in precursors:
@@ -292,27 +294,36 @@ def link_frag_to_prec(
 
         for fragment in fragments:
             fragment_rt_range, fragment_points = fragments[fragment]
-            mz, lower, upper = counter_to_og_rt_ms_mz[fragment_rt_range[0]][2:]
+            isolation_mz = ISOLATION_WINDOWS[fragment_rt_range[0] % window_size]
+            lower, upper = 25, 25
 
             if min(precursor_rt_range) < fragment_rt_range[0] < max(precursor_rt_range) \
             and np.abs(
                 np.mean(
                     [x[1] for x in precursor_points]) - np.mean(
                     [x[1] for x in fragment_points])) <= im_epsilon \
-            and mz - lower <= np.mean([x[0] for x in precursor_points]) <= mz + upper:
+            and isolation_mz - lower <= np.mean(
+                [x[0] for x in precursor_points]) <= isolation_mz + upper:
                 precursor_to_fragments[precursor].append(fragment)
+
+    with open('results.txt', 'w') as outfile:
+        for precursor in precursor_to_fragments:
+            outfile.write(str(precursor) + ': ' + str(precursor_to_fragments[precursor]) + '\r\n')
+
+    with open('results.pkl', 'rb') as handle:
+        pickle.dump(precursor_to_fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return precursor_to_fragments
 
 def get_merged_rt_ms_level_dicts():
-    with open('counter_to_og_rt_ms_mz_from_0.pkl', 'rb') as handle:
-        counter_to_og_rt_ms_mz = pickle.load(handle)
+    with open('counter_to_og_rt_ms_from_0.pkl', 'rb') as handle:
+        counter_to_og_rt_ms = pickle.load(handle)
 
         for i in range(100, 801, 100):
-            with open('counter_to_og_rt_ms_mz_from_' + str(i) + '.pkl', 'rb') as handle:
-                counter_to_og_rt_ms_mz.update(pickle.load(handle))
+            with open('counter_to_og_rt_ms_from_' + str(i) + '.pkl', 'rb') as handle:
+                counter_to_og_rt_ms.update(pickle.load(handle))
 
-        return counter_to_og_rt_ms_mz
+        return counter_to_og_rt_ms
 
 def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
     rt, mz, im, intensity = [], [], [], []
@@ -341,78 +352,70 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
     plt.show()
         
 def driver(args):
-    exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
+    # exp = ms.MSExperiment()
+    # ms.MzMLFile().load(args.infile + '.mzML', exp)
 
-    counter_to_og_rt_ms_mz = {}
+    # counter_to_og_rt_ms = {}
 
-    start_idx = 800
-    spectra = exp.getSpectra()
-    for i in range(start_idx, start_idx + 33):
-        spec = spectra[i]
-        new_exp = four_d_spectrum_to_experiment(spec)
-        ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
+    # start_idx = 0
+    # spectra = exp.getSpectra()
+    # for i in range(start_idx, start_idx + 100):
+    #     spec = spectra[i]
+    #     new_exp = four_d_spectrum_to_experiment(spec)
+    #     ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
 
-        new_features = run_feature_finder_centroided_on_experiment(new_exp)
-        ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
+    #     new_features = run_feature_finder_centroided_on_experiment(new_exp)
+    #     ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
 
-        counter_to_og_rt_ms_mz[i] = [spec.getRT(), spec.getMSLevel()]
+    #     counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
 
-        precursor = spec.getPrecursor()
+    # with open(args.outdir + '/counter_to_og_rt_ms' + '_from_' + str(start_idx) + '.pkl', 'wb') as handle:
+    #     pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        if spec.getMSLevel() != 1:
-            counter_to_og_rt_ms_mz[i].append(precursor.getMZ())
-        else:
-            counter_to_og_rt_ms_mz[i].append(0)
+    feature_maps = []
+    rt_idx_to_rt = {}
+    counter_to_og_rt_ms = get_merged_rt_ms_level_dicts()
+    counter = 0
 
-        counter_to_og_rt_ms_mz[i].append(precursor.getIsolationWindowLowerOffset())
-        counter_to_og_rt_ms_mz[i].append(precursor.getIsolationWindowUpperOffset())
+    with open('frames.txt', 'w') as infile:
+        for i in range(0, 17):
+            for j in range(i, args.num_frames, 17):
+                infile.write(str(j) + "\r\n")
+                features = ms.FeatureMap()
+                ms.FeatureXMLFile().load(
+                    str(j) + '_' + args.outfile + '.featureXML', features)
 
-    with open(args.outdir + '/counter_to_og_rt_ms_mz' + '_from_' + str(start_idx) + '.pkl', 'wb') as handle:
-        pickle.dump(counter_to_og_rt_ms_mz, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                for feature in features:
+                    infile.write(str(feature.getMZ()) \
+                    + ',' + str(feature.getRT()) + ',' \
+                    + str(feature.getIntensity()) + "\r\n")
 
-    # feature_maps = []
-    # rt_idx_to_rt = {}
-    # counter_to_og_rt_ms_mz = get_merged_rt_ms_level_dicts()
-    # counter = 0
+                feature_maps.append(features)
+                rt_idx_to_rt[counter] = j
+                counter+= 1
 
-    # with open('frames.txt', 'w') as infile:
-    #     for i in range(0, 17):
-    #         for j in range(i, args.num_frames, 17):
-    #             infile.write(str(j) + "\r\n")
-    #             features = ms.FeatureMap()
-    #             ms.FeatureXMLFile().load(
-    #                 str(j) + '_' + args.outfile + '.featureXML', features)
+    possible_species = \
+        link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    #             for feature in features:
-    #                 infile.write(str(feature.getMZ()) \
-    #                 + ',' + str(feature.getRT()) + ',' \
-    #                 + str(feature.getIntensity()) + "\r\n")
+    precursors, fragments = split_precursors_and_fragments(
+        possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
 
-    #             feature_maps.append(features)
-    #             rt_idx_to_rt[counter] = j
-    #             counter+= 1
+    with open('precursors.txt', 'w') as outfile:
+        outfile.write(str(len(precursors)) + "\r\n")
+        for precursor in precursors:
+            outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    # possible_species = \
-    #     link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-    # # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    with open('precursors.pkl', 'rb') as handle:
+        pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # precursors, fragments = split_precursors_and_fragments(
-    #     possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms_mz)
+    with open('fragments.txt', 'w') as outfile:
+        outfile.write(str(len(fragments)) + "\r\n")
+        for fragment in fragments:
+            outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
-    # with open('precursors.txt', 'w') as infile:
-    #     infile.write(str(len(precursors)) + "\r\n")
-    #     for precursor in precursors:
-    #         infile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
-
-    # with open('fragments.txt', 'w') as infile:
-    #     infile.write(str(len(fragments)) + "\r\n")
-    #     for fragment in fragments:
-    #         infile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
-
-    # print(
-    #     link_frag_to_prec(
-    #         fragments, precursors, args.window_size, args.im_epsilon, 0, counter_to_og_rt_ms_mz))
+    with open('fragments.pkl', 'rb') as handle:
+        pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":
