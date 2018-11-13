@@ -310,7 +310,7 @@ def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold)
         for precursor in precursor_to_fragments:
             outfile.write(str(precursor) + ': ' + str(precursor_to_fragments[precursor]) + '\r\n')
 
-    with open('results.pkl', 'rb') as handle:
+    with open('results.pkl', 'wb') as handle:
         pickle.dump(precursor_to_fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return precursor_to_fragments
@@ -350,7 +350,83 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
     cb = plt.colorbar(line)
 
     plt.show()
-        
+
+def parse_openms(openms_filename):
+    prec_id_to_mz, prec_id_to_frag_anno = {}, {}
+    with open(openms_filename, 'r') as infile:
+        next(infile)
+        for line in infile:
+            line = line.rstrip('\n')
+            line = line.split(',')
+            prec_id_to_mz[line[1]] = float(line[9])
+            prec_id_to_frag_anno[line[1]] = line[60]
+                    
+    return prec_id_to_mz, prec_id_to_frag_anno
+
+def process_openms_frag_anno(anno):
+    anno = [float(x.split('_')[2]) for x in anno.split(';')]
+
+    return anno
+
+def compare_baseline_to_openms(
+    args, precursors, fragments, results, openms_filename):
+    num_openms = 0
+    shared_pairs = []
+
+    openms_id_to_mz, openms_id_to_frag_anno = parse_openms(openms_filename)
+
+    for openms_id in openms_id_to_mz:
+        openms_mz = openms_id_to_mz[openms_id]
+        match_found = False
+
+        for precursor in precursors:
+            _, precursor_points = precursors[precursor]
+            precursor_mz = np.mean([x[0] for x in precursor_points])
+
+            if np.abs(precursor_mz - openms_mz) < args.mz_epsilon:
+                shared_pairs.append((openms_id, precursor))
+                match_found = True
+
+        if not match_found:
+            num_openms+= 1
+
+    shared_pairs_to_counts = {}
+
+    for pair in shared_pairs:
+        openms_id, prec_id = pair
+        openms_frag_mzs = process_openms_frag_anno(
+            openms_id_to_frag_anno[openms_id])
+        baseline_frags = results[prec_id]
+
+        total = len(openms_frag_mzs)
+        matching, extra = 0, 0
+
+        for openms_frag_mz in openms_frag_mzs:
+            match_found = False
+
+            for baseline_frag in baseline_frags:
+                _, frag_points = fragments[baseline_frag]
+                frag_mz = np.mean([x[0] for x in frag_points])
+
+                if np.abs(frag_mz - openms_frag_mz) < args.mz_epsilon:
+                    match_found = True
+
+            if match_found:
+                matching+= 1
+            else:
+                extra+= 1
+
+        shared_pairs_to_counts[pair] = [total, matching, extra]
+
+    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 1])))
+    print('\n\r')
+
+    for pair in shared_pairs:
+        if shared_pairs_to_counts[pair][1] > 0:
+            print(str(pair) + ':' + str(shared_pairs_to_counts[pair]) + '\n\r')
+
+    return shared_pairs_to_counts
+
 def driver(args):
     # exp = ms.MSExperiment()
     # ms.MzMLFile().load(args.infile + '.mzML', exp)
@@ -372,50 +448,65 @@ def driver(args):
     # with open(args.outdir + '/counter_to_og_rt_ms' + '_from_' + str(start_idx) + '.pkl', 'wb') as handle:
     #     pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    feature_maps = []
-    rt_idx_to_rt = {}
-    counter_to_og_rt_ms = get_merged_rt_ms_level_dicts()
-    counter = 0
+    ###################
 
-    with open('frames.txt', 'w') as infile:
-        for i in range(0, 17):
-            for j in range(i, args.num_frames, 17):
-                infile.write(str(j) + "\r\n")
-                features = ms.FeatureMap()
-                ms.FeatureXMLFile().load(
-                    str(j) + '_' + args.outfile + '.featureXML', features)
+    # feature_maps = []
+    # rt_idx_to_rt = {}
+    # counter_to_og_rt_ms = get_merged_rt_ms_level_dicts()
+    # counter = 0
 
-                for feature in features:
-                    infile.write(str(feature.getMZ()) \
-                    + ',' + str(feature.getRT()) + ',' \
-                    + str(feature.getIntensity()) + "\r\n")
+    # with open('frames.txt', 'w') as infile:
+    #     for i in range(0, 17):
+    #         for j in range(i, args.num_frames, 17):
+    #             infile.write(str(j) + "\r\n")
+    #             features = ms.FeatureMap()
+    #             ms.FeatureXMLFile().load(
+    #                 str(j) + '_' + args.outfile + '.featureXML', features)
 
-                feature_maps.append(features)
-                rt_idx_to_rt[counter] = j
-                counter+= 1
+    #             for feature in features:
+    #                 infile.write(str(feature.getMZ()) \
+    #                 + ',' + str(feature.getRT()) + ',' \
+    #                 + str(feature.getIntensity()) + "\r\n")
 
-    possible_species = \
-        link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    #             feature_maps.append(features)
+    #             rt_idx_to_rt[counter] = j
+    #             counter+= 1
 
-    precursors, fragments = split_precursors_and_fragments(
-        possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
+    # possible_species = \
+    #     link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+    # # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    with open('precursors.txt', 'w') as outfile:
-        outfile.write(str(len(precursors)) + "\r\n")
-        for precursor in precursors:
-            outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+    # precursors, fragments = split_precursors_and_fragments(
+    #     possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
+
+    # with open('precursors.txt', 'w') as outfile:
+    #     outfile.write(str(len(precursors)) + "\r\n")
+    #     for precursor in precursors:
+    #         outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+
+    # with open('precursors.pkl', 'wb') as handle:
+    #     pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # with open('fragments.txt', 'w') as outfile:
+    #     outfile.write(str(len(fragments)) + "\r\n")
+    #     for fragment in fragments:
+    #         outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
+
+    # with open('fragments.pkl', 'wb') as handle:
+    #     pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # link_frag_to_prec(fragments, precursors, args.window_size, args.im_epsilon, 0)
 
     with open('precursors.pkl', 'rb') as handle:
-        pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    with open('fragments.txt', 'w') as outfile:
-        outfile.write(str(len(fragments)) + "\r\n")
-        for fragment in fragments:
-            outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
+        precursors = pickle.load(handle)
 
     with open('fragments.pkl', 'rb') as handle:
-        pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        fragments = pickle.load(handle)
+
+    with open('results.pkl', 'rb') as handle:
+        results = pickle.load(handle)
+
+    compare_baseline_to_openms(args, precursors, fragments, results, '../3001_to_3098_openms.csv')
 
 
 if __name__ == "__main__":
