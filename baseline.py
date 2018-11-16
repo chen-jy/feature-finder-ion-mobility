@@ -286,7 +286,7 @@ def split_precursors_and_fragments(
 
     return precursors, fragments
 
-def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold):
+def link_frag_to_prec(dir, fragments, precursors, window_size, im_epsilon, threshold):
     precursor_to_fragments = defaultdict(list)
 
     for precursor in precursors:
@@ -306,27 +306,16 @@ def link_frag_to_prec(fragments, precursors, window_size, im_epsilon, threshold)
                 [x[0] for x in precursor_points]) <= isolation_mz + upper:
                 precursor_to_fragments[precursor].append(fragment)
 
-    with open('results.txt', 'w') as outfile:
+    with open(dir + '/results.txt', 'w') as outfile:
         for precursor in precursor_to_fragments:
             outfile.write(str(precursor) + ': ' + str(precursor_to_fragments[precursor]) + '\r\n')
 
-    with open('results.pkl', 'wb') as handle:
+    with open(dir + '/results.pkl', 'wb') as handle:
         pickle.dump(precursor_to_fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return precursor_to_fragments
 
-def get_merged_rt_ms_level_dicts(dir):
-    with open(dir + '/counter_to_og_rt_ms_from_0.pkl', 'rb') as handle:
-        counter_to_og_rt_ms = pickle.load(handle)
-
-        # for i in range(100, 801, 100):
-        #     with open(dir + '/counter_to_og_rt_ms_from_' + \
-        #                 str(i) + '.pkl', 'rb') as handle:
-        #         counter_to_og_rt_ms.update(pickle.load(handle))
-
-        return counter_to_og_rt_ms
-
-def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
+def plot_3d_intensity_map(feature_maps, rt_idx_to_rt, mode='3d'):
     rt, mz, im, intensity = [], [], [], []
 
     for i in range(len(feature_maps)):
@@ -337,16 +326,18 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt):
             intensity.append(feature.getIntensity())
 
     fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none', depthshade=0)
-    # ax.set_xlabel('mz')
-    # ax.set_ylabel('rt')
-    # ax.set_zlabel('im')
 
-    ax = fig.add_subplot(111)
-    line = ax.scatter(mz, rt, c=intensity, s=25, marker='.', edgecolors='none')
-    ax.set_xlabel('mz')
-    ax.set_ylabel('rt')
+    if mode == '3d':
+        ax = fig.add_subplot(111, projection='3d')
+        line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none', depthshade=0)
+        ax.set_xlabel('mz')
+        ax.set_ylabel('rt')
+        ax.set_zlabel('im')
+    else:
+        ax = fig.add_subplot(111)
+        line = ax.scatter(mz, rt, c=intensity, s=25, marker='.', edgecolors='none')
+        ax.set_xlabel('mz')
+        ax.set_ylabel('rt')
 
     cb = plt.colorbar(line)
 
@@ -422,12 +413,25 @@ def compare_baseline_to_openms(
 
         shared_pairs_to_counts[pair] = [total, matching, extra]
 
-    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > -1])))
+    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 5])))
+    print('\n\r')
+    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 0])))
     print('\n\r')
 
-    # for pair in shared_pairs:
-    #     if shared_pairs_to_counts[pair][1] > 0:
-    #         print(str(pair) + ':' + str(shared_pairs_to_counts[pair]) + '\n\r')
+    for pair in shared_pairs:
+        if shared_pairs_to_counts[pair][1] > 5:
+            print(str(pair) + ':' + str(shared_pairs_to_counts[pair]) + '\n\r')
+            openms_id, prec_id = pair
+            openms_frag_mzs = process_openms_frag_anno(
+                openms_id_to_frag_anno[openms_id])
+            print(str(openms_frag_mzs) + '\n\r')
+            baseline_frags = results[prec_id]
+            baseline_frag_mzs = []
+            for baseline_frag in baseline_frags:
+                _, frag_points = fragments[baseline_frag]
+                frag_mz = np.mean([x[0] for x in frag_points])
+                baseline_frag_mzs.append(frag_mz)
+            print(str(sorted(baseline_frag_mzs)) + '\n\r')
 
     return shared_pairs_to_counts
 
@@ -449,17 +453,19 @@ def driver(args):
 
         counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
 
-    with open(args.outdir + '/counter_to_og_rt_ms' + '_from_' + str(start_idx) + '.pkl', 'wb') as handle:
+    with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
         pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    #################################################################################################################
+    #####################################################################################
 
     feature_maps = []
-    rt_idx_to_rt = {}
-    counter_to_og_rt_ms = get_merged_rt_ms_level_dicts(args.outdir)
+    rt_idx_to_rt, counter_to_og_rt_ms = {}, {}
     counter = 0
 
-    with open('frames.txt', 'w') as infile:
+    with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'rb') as handle:
+        counter_to_og_rt_ms = pickle.load(handle)
+
+    with open(args.outdir + '/frames.txt', 'w') as infile:
         for i in range(0, 17):
             for j in range(i, args.num_frames, 17):
                 infile.write(str(j) + "\r\n")
@@ -484,31 +490,33 @@ def driver(args):
     precursors, fragments = split_precursors_and_fragments(
         possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
 
-    with open('precursors.txt', 'w') as outfile:
+    with open(args.outdir + '/precursors.txt', 'w') as outfile:
         outfile.write(str(len(precursors)) + "\r\n")
         for precursor in precursors:
             outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    with open('precursors.pkl', 'wb') as handle:
+    with open(args.outdir + '/precursors.pkl', 'wb') as handle:
         pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open('fragments.txt', 'w') as outfile:
+    with open(args.outdir + '/fragments.txt', 'w') as outfile:
         outfile.write(str(len(fragments)) + "\r\n")
         for fragment in fragments:
             outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
-    with open('fragments.pkl', 'wb') as handle:
+    with open(args.outdir + '/fragments.pkl', 'wb') as handle:
         pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    link_frag_to_prec(fragments, precursors, args.window_size, args.im_epsilon, 0)
+    #####################################################################################
 
-    with open('precursors.pkl', 'rb') as handle:
+    link_frag_to_prec(args.outdir, fragments, precursors, args.window_size, args.im_epsilon, 0)
+
+    with open(args.outdir + '/precursors.pkl', 'rb') as handle:
         precursors = pickle.load(handle)
 
-    with open('fragments.pkl', 'rb') as handle:
+    with open(args.outdir + '/fragments.pkl', 'rb') as handle:
         fragments = pickle.load(handle)
 
-    with open('results.pkl', 'rb') as handle:
+    with open(args.outdir + '/results.pkl', 'rb') as handle:
         results = pickle.load(handle)
 
     compare_baseline_to_openms(args, precursors, fragments, results, '3001_to_3098_openms.csv')
