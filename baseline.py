@@ -384,131 +384,191 @@ def compare_baseline_to_openms(
 
     print('Number of precursors detected in both OpenMS and Baseline: ' + \
         str(num_openms) + ' out of ' + str(len(openms_id_to_mz)) + '\n\r')
+    print(len(precursors))
 
-    shared_pairs_to_counts = {}
+    num_openms = 0
+    openms_frag_mzs = []
 
-    for pair in shared_pairs:
-        openms_id, prec_id = pair
-        openms_frag_mzs = process_openms_frag_anno(
-            openms_id_to_frag_anno[openms_id])
-        baseline_frags = results[prec_id]
+    for openms_id in openms_id_to_mz:
+        for openms_frag_mz in process_openms_frag_anno(
+            openms_id_to_frag_anno[openms_id]):
+            openms_frag_mzs.append(openms_frag_mz)
 
-        total = len(openms_frag_mzs)
-        matching, extra = 0, 0
+    openms_frag_mzs = list(set(openms_frag_mzs))
+    openms_frag_mzs.sort()
 
-        for openms_frag_mz in openms_frag_mzs:
-            match_found = False
+    baseline_frag_mzs = []
 
-            for baseline_frag in baseline_frags:
-                _, frag_points = fragments[baseline_frag]
-                frag_mz = np.mean([x[0] for x in frag_points])
+    for fragment in fragments:
+        _, fragment_points = fragments[fragment]
+        fragment_mz = np.mean([x[0] for x in fragment_points])
+        baseline_frag_mzs.append(fragment_mz)
 
-                if np.abs(frag_mz - openms_frag_mz) < args.mz_epsilon:
-                    match_found = True
+    baseline_frag_mzs = list(set(baseline_frag_mzs))
+    baseline_frag_mzs.sort()
 
-            if match_found:
-                matching+= 1
-            else:
-                extra+= 1
+    i, j = 0, 0
 
-        shared_pairs_to_counts[pair] = [total, matching, extra]
+    while i < len(openms_frag_mzs) and j < len(baseline_frag_mzs):
+        openms_frag_mz, baseline_frag_mz = (
+            openms_frag_mzs[i], baseline_frag_mzs[j])
 
-    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 5])))
-    print('\n\r')
-    print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 0])))
-    print('\n\r')
+        if np.abs(baseline_frag_mz - openms_frag_mz) < args.mz_epsilon:
+            num_openms+= 1
+            i+= 1
+            j+= 1
+        elif min(openms_frag_mz, baseline_frag_mz) == openms_frag_mz:
+            i+= 1
+        else:
+            j+= 1
 
-    for pair in shared_pairs:
-        if shared_pairs_to_counts[pair][1] > 5:
-            print(str(pair) + ':' + str(shared_pairs_to_counts[pair]) + '\n\r')
-            openms_id, prec_id = pair
-            openms_frag_mzs = process_openms_frag_anno(
-                openms_id_to_frag_anno[openms_id])
-            print(str(openms_frag_mzs) + '\n\r')
-            baseline_frags = results[prec_id]
-            baseline_frag_mzs = []
-            for baseline_frag in baseline_frags:
-                _, frag_points = fragments[baseline_frag]
-                frag_mz = np.mean([x[0] for x in frag_points])
-                baseline_frag_mzs.append(frag_mz)
-            print(str(sorted(baseline_frag_mzs)) + '\n\r')
+    # for openms_frag_mz in openms_frag_mzs:
+    #     if counter % 100 == 0:
+    #         print(counter)
+    #     counter+= 1
+    #     match_found = False
 
-    return shared_pairs_to_counts
+    #     for fragment in fragments:
+    #         _, fragment_points = fragments[fragment]
+    #         fragment_mz = np.mean([x[0] for x in fragment_points])
+
+    #         if np.abs(fragment_mz - openms_frag_mz) < args.mz_epsilon:
+    #             match_found = True
+
+    #     if match_found:
+    #         num_openms+= 1
+
+    print('Number of fragments detected in both OpenMS and Baseline: ' + \
+        str(num_openms) + ' out of ' + str(len(openms_frag_mzs)) + '\n\r')
+    
+    baseline_frag_mzs = list(set([float('%.6g' % x) for x in baseline_frag_mzs]))
+    print(len(baseline_frag_mzs))
+
+    # shared_pairs_to_counts = {}
+
+    # for pair in shared_pairs:
+    #     openms_id, prec_id = pair
+    #     openms_frag_mzs = process_openms_frag_anno(
+    #         openms_id_to_frag_anno[openms_id])
+    #     baseline_frags = results[prec_id]
+
+    #     total = len(openms_frag_mzs)
+    #     matching, extra = 0, 0
+
+    #     for openms_frag_mz in openms_frag_mzs:
+    #         match_found = False
+
+    #         for baseline_frag in baseline_frags:
+    #             _, frag_points = fragments[baseline_frag]
+    #             frag_mz = np.mean([x[0] for x in frag_points])
+
+    #             if np.abs(frag_mz - openms_frag_mz) < args.mz_epsilon:
+    #                 match_found = True
+
+    #         if match_found:
+    #             matching+= 1
+    #         else:
+    #             extra+= 1
+
+    #     shared_pairs_to_counts[pair] = [total, matching, extra]
+
+    # print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 5])))
+    # print('\n\r')
+    # print(len(set([x[0] for x in shared_pairs if shared_pairs_to_counts[x][1] > 0])))
+    # print('\n\r')
+
+    # for pair in shared_pairs:
+    #     if shared_pairs_to_counts[pair][1] > 5:
+    #         print(str(pair) + ':' + str(shared_pairs_to_counts[pair]) + '\n\r')
+    #         openms_id, prec_id = pair
+    #         openms_frag_mzs = process_openms_frag_anno(
+    #             openms_id_to_frag_anno[openms_id])
+    #         print(str(openms_frag_mzs) + '\n\r')
+    #         baseline_frags = results[prec_id]
+    #         baseline_frag_mzs = []
+    #         for baseline_frag in baseline_frags:
+    #             _, frag_points = fragments[baseline_frag]
+    #             frag_mz = np.mean([x[0] for x in frag_points])
+    #             baseline_frag_mzs.append(frag_mz)
+    #         print(str(sorted(baseline_frag_mzs)) + '\n\r')
+
+    # return shared_pairs_to_counts
+    return
 
 def driver(args):
-    exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
+    # exp = ms.MSExperiment()
+    # ms.MzMLFile().load(args.infile + '.mzML', exp)
 
-    counter_to_og_rt_ms = {}
+    # counter_to_og_rt_ms = {}
 
-    start_idx = 0
-    spectra = exp.getSpectra()
-    for i in range(start_idx, start_idx + args.num_frames):
-        spec = spectra[i]
-        new_exp = four_d_spectrum_to_experiment(spec)
-        ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
+    # start_idx = 0
+    # spectra = exp.getSpectra()
+    # for i in range(start_idx, start_idx + args.num_frames):
+    #     spec = spectra[i]
+    #     new_exp = four_d_spectrum_to_experiment(spec)
+    #     ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
 
-        new_features = run_feature_finder_centroided_on_experiment(new_exp)
-        ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
+    #     new_features = run_feature_finder_centroided_on_experiment(new_exp)
+    #     ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
 
-        counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
+    #     counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
 
-    with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
-        pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
+    #     pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    #####################################################################################
+    # #####################################################################################
 
-    feature_maps = []
-    rt_idx_to_rt, counter_to_og_rt_ms = {}, {}
-    counter = 0
+    # feature_maps = []
+    # rt_idx_to_rt, counter_to_og_rt_ms = {}, {}
+    # counter = 0
 
-    with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'rb') as handle:
-        counter_to_og_rt_ms = pickle.load(handle)
+    # with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'rb') as handle:
+    #     counter_to_og_rt_ms = pickle.load(handle)
 
-    with open(args.outdir + '/frames.txt', 'w') as infile:
-        for i in range(0, 17):
-            for j in range(i, args.num_frames, 17):
-                infile.write(str(j) + "\r\n")
-                features = ms.FeatureMap()
-                ms.FeatureXMLFile().load(
-                    args.outdir + '/' + str(j) + '_' + args.outfile + '.featureXML',
-                    features)
+    # with open(args.outdir + '/frames.txt', 'w') as infile:
+    #     for i in range(0, args.window_size):
+    #         for j in range(i, args.num_frames, args.window_size):
+    #             infile.write(str(j) + "\r\n")
+    #             features = ms.FeatureMap()
+    #             ms.FeatureXMLFile().load(
+    #                 args.outdir + '/' + str(j) + '_' + args.outfile + '.featureXML',
+    #                 features)
 
-                for feature in features:
-                    infile.write(str(feature.getMZ()) \
-                    + ',' + str(feature.getRT()) + ',' \
-                    + str(feature.getIntensity()) + "\r\n")
+    #             for feature in features:
+    #                 infile.write(str(feature.getMZ()) \
+    #                 + ',' + str(feature.getRT()) + ',' \
+    #                 + str(feature.getIntensity()) + "\r\n")
 
-                feature_maps.append(features)
-                rt_idx_to_rt[counter] = j
-                counter+= 1
+    #             feature_maps.append(features)
+    #             rt_idx_to_rt[counter] = j
+    #             counter+= 1
 
-    possible_species = \
-        link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    # possible_species = \
+    #     link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+    # # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    precursors, fragments = split_precursors_and_fragments(
-        possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
+    # precursors, fragments = split_precursors_and_fragments(
+    #     possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
 
-    with open(args.outdir + '/precursors.txt', 'w') as outfile:
-        outfile.write(str(len(precursors)) + "\r\n")
-        for precursor in precursors:
-            outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+    # with open(args.outdir + '/precursors.txt', 'w') as outfile:
+    #     outfile.write(str(len(precursors)) + "\r\n")
+    #     for precursor in precursors:
+    #         outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    with open(args.outdir + '/precursors.pkl', 'wb') as handle:
-        pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # with open(args.outdir + '/precursors.pkl', 'wb') as handle:
+    #     pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open(args.outdir + '/fragments.txt', 'w') as outfile:
-        outfile.write(str(len(fragments)) + "\r\n")
-        for fragment in fragments:
-            outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
+    # with open(args.outdir + '/fragments.txt', 'w') as outfile:
+    #     outfile.write(str(len(fragments)) + "\r\n")
+    #     for fragment in fragments:
+    #         outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
-    with open(args.outdir + '/fragments.pkl', 'wb') as handle:
-        pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # with open(args.outdir + '/fragments.pkl', 'wb') as handle:
+    #     pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    #####################################################################################
+    # ####################################################################################
 
-    link_frag_to_prec(args.outdir, fragments, precursors, args.window_size, args.im_epsilon, 0)
+    # link_frag_to_prec(args.outdir, fragments, precursors, args.window_size, args.im_epsilon, 0)
 
     with open(args.outdir + '/precursors.pkl', 'rb') as handle:
         precursors = pickle.load(handle)
@@ -519,7 +579,7 @@ def driver(args):
     with open(args.outdir + '/results.pkl', 'rb') as handle:
         results = pickle.load(handle)
 
-    compare_baseline_to_openms(args, precursors, fragments, results, '3001_to_3098_openms.csv')
+    compare_baseline_to_openms(args, precursors, fragments, results, '../../data/3001_to_3098_openms.csv')
 
 
 if __name__ == "__main__":
