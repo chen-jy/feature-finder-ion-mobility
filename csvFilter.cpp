@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
 		double rt = atof(table[i][idx_rt].c_str());
 		double q = atof(table[i][idx_q].c_str());
 
-		if (3001 <= rt && rt <= 3098 && q >= 0.025) {
+		if (3001 <= rt && rt <= 3098 && q >= 0.01) {
 			filtered.push_back(table[i]);
 		}
 	}
