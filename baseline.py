@@ -89,6 +89,31 @@ def get_points(spec):
 
     return coords
 
+def fit_plane(coords):
+    lxyzs = [list(x) for x in coords]
+    cxyzs = list(zip(*coords))
+    points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
+
+    n = len(coords)
+    max_iterations = 1000
+    goal_inliers = n * 0.5
+
+    m, b = ransac.run_ransac(lxyzs, estimate, lambda x, y: is_inlier(x, y, 0.01),
+                             3, goal_inliers, max_iterations)
+    a, b, c, d = m
+
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    ax.scatter3D(points[0][0::5], points[1][0::5], points[2][0::5])
+
+    def plot_plane(a, b, c, d):
+        xx, yy = np.mgrid[:1000, :1000]
+        return xx, yy, (-d - a * xx - b * yy) / c
+
+    xx, yy, zz = plot_plane(a, b, c, d)
+    ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
+    plt.show()
+
 def run_feature_finder_centroided_on_experiment(input_map):
     """Function that runs FeatureFinderCentroided on the given input map.
 
@@ -541,15 +566,18 @@ def driver(args):
         coords = get_points(spec)
 
         # Quick graph
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        cxyz = list(zip(*coords))
-        x, y, z = list(cxyz[0]), list(cxyz[1]), list(cxyz[2])
-        ax.scatter(x, y, z, c='r', marker='o')
-        ax.set_xlabel('IM')
-        ax.set_ylabel('MZ')
-        ax.set_zlabel('Intensity')
-        plt.show()
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111, projection='3d')
+        #cxyz = list(zip(*coords))
+        #x, y, z = list(cxyz[0]), list(cxyz[1]), list(cxyz[2])
+        #ax.scatter(x, y, z, c='r', marker='o')
+        #ax.set_xlabel('IM')
+        #ax.set_ylabel('MZ')
+        #ax.set_zlabel('Intensity')
+        #plt.show()
+
+        fit_plane(coords)
+        break
 
         #new_exp = four_d_spectrum_to_experiment(spec)
         #ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
