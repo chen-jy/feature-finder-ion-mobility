@@ -11,6 +11,10 @@ from scipy.signal import argrelextrema
 import ransac
 from plane_fitting import estimate, is_inlier
 
+import random
+import math
+from sklearn.cluster import DBSCAN
+
 ISOLATION_WINDOWS = \
     {0: 0, 1: 437.5, 2: 487.5, 3: 537.5, 4: 587.5, 5: 637.5, 6: 687.5, \
      7: 737.5, 8: 787.5, 9: 837.5, 10: 887.5, 11: 937.5, 12: 987.5, \
@@ -89,30 +93,126 @@ def get_points(spec):
 
     return coords
 
+def rm_outliers(xyzs, coeffs, inlier_th):
+    for i in reversed(range(len(xyzs))):
+        if not is_inlier(coeffs, xyzs[i], inlier_th):
+            del xyzs[i]
+    return xyzs
+
+def extract_outliers(xyzs, coeffs, inlier_th):
+    outl = []
+    for i in reversed(range(len(xyzs))):
+        if not is_inlier(coeffs, xyzs[i], inlier_th):
+            outl.append(xyzs[i])
+    return outl
+
+def cus_ransac(points):
+    a, b, c, d = 0, 0, 0, 0
+    max_inliers = []
+    max_inlier_count = 0
+
+    for i in range(500):
+        sample = random.choices(points, k=3)
+        p1, p2, p3 = sample[0], sample[1], sample[2]
+        inliers = []
+        inlier_count = 0
+
+        v1 = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
+        v2 = (p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2])
+        # Normal vector
+        v3 = (v1[1] * v2[2] - v1[2] * v2[1],
+              v1[2] * v2[0] - v1[0] * v2[2],
+              v1[0] * v2[1] - v1[1] * v2[0])
+        # Compute D
+        cd = v3[0] * p1[0] + v3[1] * p1[1] + v3[2] * p1[2]
+        # Coefficients A, B, C, D
+        m = (v3[0], v3[1], v3[2], cd)
+
+        for j in range(len(points)):
+            s = points[j]
+            dist = (m[0] * s[0] + m[1] * s[1] + m[2] * s[2] + m[3]) / (
+                   math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]))
+            if dist < 0.01:
+                inlier_count += 1
+                inliers.append(s)
+
+        if (inlier_count > max_inlier_count):
+            max_inlier_count = inlier_count
+            max_inliers = inliers
+            a, b, c, d = m
+
+    return (a, b, c, d), max_inliers
+
 def fit_plane(coords):
     lxyzs = [list(x) for x in coords]
     cxyzs = list(zip(*coords))
     points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
 
-    n = len(coords)
-    max_iterations = 1000
-    goal_inliers = n * 0.5
+    avg = 0
+    for i in range(len(lxyzs)):
+        avg += lxyzs[i][2]
+    avg /= len(lxyzs)
 
-    m, b = ransac.run_ransac(lxyzs, estimate, lambda x, y: is_inlier(x, y, 0.01),
-                             3, goal_inliers, max_iterations)
-    a, b, c, d = m
+    pf = []
+    for i in range(len(lxyzs)):
+        if lxyzs[i][2] > avg * 1.1:
+            pf.append(lxyzs[i])
 
-    fig = plt.figure()
-    ax = Axes3D(fig)
-    ax.scatter3D(points[0][0::5], points[1][0::5], points[2][0::5])
+    print(len(pf))
+    lpf = list(zip(*pf))
+    llpf = [list(x) for x in lpf]
 
-    def plot_plane(a, b, c, d):
-        xx, yy = np.mgrid[:1000, :1000]
-        return xx, yy, (-d - a * xx - b * yy) / c
+    #fig = plt.figure()
+    #ax = Axes3D(fig)
+    #ax.scatter3D(llpf[0], llpf[1], llpf[2])
 
-    xx, yy, zz = plot_plane(a, b, c, d)
-    ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
-    plt.show()
+    db = DBSCAN(eps=0.5, min_samples=5).fit(lxyzs)
+    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+    core_samples_mask[db.core_sample_indices_] = True
+    labels = db.labels_
+
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    print("Estimated number of clusters: %d" % n_clusters_)
+    print("Estimated number of noise points: %d" % n_noise_)
+
+    #n = len(coords)
+    #max_iterations = 100
+    #goal_inliers = n * 0.9
+
+    #m, b = ransac.run_ransac(lxyzs, estimate, lambda x, y: is_inlier(x, y, 0.01),
+    #                         3, goal_inliers, max_iterations)
+    #a, b, c, d = m
+
+    #m, ni = cus_ransac(lxyzs)
+    #a, b, c, d = m
+
+    #fig = plt.figure()
+    #ax = Axes3D(fig)
+    #ax.scatter3D(points[0], points[1], points[2])
+
+    #def plot_plane(a, b, c, d):
+    #    xx, yy = np.mgrid[:3, :1750]
+    #    return xx, yy, (-d - a * xx - b * yy) / c
+
+    #xx, yy, zz = plot_plane(a, b, c, d)
+    #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
+
+    #xyzs_in = rm_outliers(lxyzs, m, 0.01)
+    #coords = [tuple(x) for x in xyzs_in]
+    #cxyzs = list(zip(*coords))
+    #points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
+    #ax.scatter3D(points[0], points[1], points[2])
+
+    #m, best_inliers = ransac.run_ransac(xyzs_in, estimate, lambda x, y: is_inlier(x, y, 0.01),
+    #                                    3, goal_inliers, max_iterations)
+    #a, b, c, d = m
+    #xyzs_in = rm_outliers(lxyzs, m, 0.01)
+    #xx, yy, zz = plot_plane(a, b, c, d)
+    #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
+
+    #plt.show()
 
 def run_feature_finder_centroided_on_experiment(input_map):
     """Function that runs FeatureFinderCentroided on the given input map.
