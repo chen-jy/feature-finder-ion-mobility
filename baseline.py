@@ -143,11 +143,12 @@ def cus_ransac(points):
 
     return (a, b, c, d), max_inliers
 
-def fit_plane(coords):
+def fit_plane(coords, rt):
     lxyzs = [list(x) for x in coords]
     cxyzs = list(zip(*coords))
     points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
-
+    
+    # RANSAC not working; just use points 10% greater than avg
     avg = 0
     for i in range(len(lxyzs)):
         avg += lxyzs[i][2]
@@ -166,6 +167,7 @@ def fit_plane(coords):
     #ax = Axes3D(fig)
     #ax.scatter3D(llpf[0], llpf[1], llpf[2])
 
+    # DBSCAN clustering
     db = DBSCAN(eps=0.5, min_samples=5).fit(lxyzs)
     core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
     core_samples_mask[db.core_sample_indices_] = True
@@ -213,6 +215,40 @@ def fit_plane(coords):
     #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
 
     #plt.show()
+
+    # Construct the found features
+    features = ms.FeatureMap()
+    f_groups = {}
+
+    # Group by cluster
+    for i in range(len(coords)):
+        #if labels[i] in f_groups:
+        #    f_groups[i].append(coords[i])
+        #elif labels[i] != -1:
+        #    f_groups[i] = [coords[i]]
+
+        if labels[i] != -1:
+            f_groups.setdefault(labels[i], []).append(coords[i])
+
+    # Attempt 1: only include apex points
+    for key, val in f_groups.items():
+        apex = val[0]
+
+        for i in range(1, len(val)):
+            if (val[i][2] > apex[2]):
+                apex = val[i]
+
+        f = ms.Feature()
+        f.setMZ(apex[1])
+        f.setCharge(1) # TODO
+        f.setRT(rt)
+        f.setIntensity(apex[2])
+        f.setOverallQuality(1)
+
+        features.push_back(f)
+
+    features.setUniqueIds()
+    return features
 
 def run_feature_finder_centroided_on_experiment(input_map):
     """Function that runs FeatureFinderCentroided on the given input map.
@@ -676,7 +712,8 @@ def driver(args):
         #ax.set_zlabel('Intensity')
         #plt.show()
 
-        fit_plane(coords)
+        new_features = fit_plane(coords, spec.getRT())
+        ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
         break
 
         #new_exp = four_d_spectrum_to_experiment(spec)
