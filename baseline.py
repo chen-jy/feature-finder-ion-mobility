@@ -8,13 +8,6 @@ import pyopenms as ms
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.signal import argrelextrema
 
-import ransac
-from plane_fitting import estimate, is_inlier
-
-import random
-import math
-from sklearn.cluster import DBSCAN
-
 ISOLATION_WINDOWS = \
     {0: 0, 1: 437.5, 2: 487.5, 3: 537.5, 4: 587.5, 5: 637.5, 6: 687.5, \
      7: 737.5, 8: 787.5, 9: 837.5, 10: 887.5, 11: 937.5, 12: 987.5, \
@@ -62,192 +55,6 @@ def four_d_spectrum_to_experiment(spec):
         new_int.append(intensity)
 
     return new_exp
-
-def get_points(spec):
-    """Function that converts a 4D spectrum object which contains retention
-    time, ion mobility, mass to charge, and intensity data, into a list of
-    triples (ion mobility, mass to charge, intensity).
-
-    Args:
-        spec (MSSpectrum): An OpenMS MSSpectrum object.
-
-    Returns:
-        list(tuple): A list of 3-tuples with (im, mz, int) data from the
-        given spectrum.
-    """
-    ion_mobility_to_peaks = zip(spec.getFloatDataArrays()[0], *spec.get_peaks())
-
-    new_exp = ms.MSExperiment()
-    new_mz, new_int = [], []
-    curr_im = None
-
-    coords = []
-
-    for im, new_mz, intensity in sorted(
-        ion_mobility_to_peaks, key = lambda x: (x[0], x[1], x[2])):
-        #if im != curr_im:
-        #    if curr_im:
-        #        coords.append((im, new_mz, intensity))
-        #    curr_im = im
-        coords.append((im, new_mz, intensity))
-
-    return coords
-
-def rm_outliers(xyzs, coeffs, inlier_th):
-    for i in reversed(range(len(xyzs))):
-        if not is_inlier(coeffs, xyzs[i], inlier_th):
-            del xyzs[i]
-    return xyzs
-
-def extract_outliers(xyzs, coeffs, inlier_th):
-    outl = []
-    for i in reversed(range(len(xyzs))):
-        if not is_inlier(coeffs, xyzs[i], inlier_th):
-            outl.append(xyzs[i])
-    return outl
-
-def cus_ransac(points):
-    a, b, c, d = 0, 0, 0, 0
-    max_inliers = []
-    max_inlier_count = 0
-
-    for i in range(500):
-        sample = random.choices(points, k=3)
-        p1, p2, p3 = sample[0], sample[1], sample[2]
-        inliers = []
-        inlier_count = 0
-
-        v1 = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
-        v2 = (p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2])
-        # Normal vector
-        v3 = (v1[1] * v2[2] - v1[2] * v2[1],
-              v1[2] * v2[0] - v1[0] * v2[2],
-              v1[0] * v2[1] - v1[1] * v2[0])
-        # Compute D
-        cd = v3[0] * p1[0] + v3[1] * p1[1] + v3[2] * p1[2]
-        # Coefficients A, B, C, D
-        m = (v3[0], v3[1], v3[2], cd)
-
-        for j in range(len(points)):
-            s = points[j]
-            dist = (m[0] * s[0] + m[1] * s[1] + m[2] * s[2] + m[3]) / (
-                   math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]))
-            if dist < 0.01:
-                inlier_count += 1
-                inliers.append(s)
-
-        if (inlier_count > max_inlier_count):
-            max_inlier_count = inlier_count
-            max_inliers = inliers
-            a, b, c, d = m
-
-    return (a, b, c, d), max_inliers
-
-def fit_plane(coords, rt):
-    lxyzs = [list(x) for x in coords]
-    cxyzs = list(zip(*coords))
-    points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
-    
-    # RANSAC not working; just use points 10% greater than avg
-    avg = 0
-    for i in range(len(lxyzs)):
-        avg += lxyzs[i][2]
-    avg /= len(lxyzs)
-
-    pf = []
-    for i in range(len(lxyzs)):
-        if lxyzs[i][2] > avg * 1.1:
-            pf.append(lxyzs[i])
-
-    print(len(pf))
-    lpf = list(zip(*pf))
-    llpf = [list(x) for x in lpf]
-
-    #fig = plt.figure()
-    #ax = Axes3D(fig)
-    #ax.scatter3D(llpf[0], llpf[1], llpf[2])
-
-    # DBSCAN clustering
-    db = DBSCAN(eps=0.5, min_samples=5).fit(lxyzs)
-    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
-    core_samples_mask[db.core_sample_indices_] = True
-    labels = db.labels_
-
-    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-    n_noise_ = list(labels).count(-1)
-
-    print("Estimated number of clusters: %d" % n_clusters_)
-    print("Estimated number of noise points: %d" % n_noise_)
-
-    #n = len(coords)
-    #max_iterations = 100
-    #goal_inliers = n * 0.9
-
-    #m, b = ransac.run_ransac(lxyzs, estimate, lambda x, y: is_inlier(x, y, 0.01),
-    #                         3, goal_inliers, max_iterations)
-    #a, b, c, d = m
-
-    #m, ni = cus_ransac(lxyzs)
-    #a, b, c, d = m
-
-    #fig = plt.figure()
-    #ax = Axes3D(fig)
-    #ax.scatter3D(points[0], points[1], points[2])
-
-    #def plot_plane(a, b, c, d):
-    #    xx, yy = np.mgrid[:3, :1750]
-    #    return xx, yy, (-d - a * xx - b * yy) / c
-
-    #xx, yy, zz = plot_plane(a, b, c, d)
-    #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
-
-    #xyzs_in = rm_outliers(lxyzs, m, 0.01)
-    #coords = [tuple(x) for x in xyzs_in]
-    #cxyzs = list(zip(*coords))
-    #points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
-    #ax.scatter3D(points[0], points[1], points[2])
-
-    #m, best_inliers = ransac.run_ransac(xyzs_in, estimate, lambda x, y: is_inlier(x, y, 0.01),
-    #                                    3, goal_inliers, max_iterations)
-    #a, b, c, d = m
-    #xyzs_in = rm_outliers(lxyzs, m, 0.01)
-    #xx, yy, zz = plot_plane(a, b, c, d)
-    #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
-
-    #plt.show()
-
-    # Group by cluster
-    f_groups = []
-    for i in range(len(coords)):
-        f_groups.append([])
-
-    for i in range(len(coords)):
-        if labels[i] != -1:
-            f_groups[labels[i]].append(coords[i])
-
-    features = ms.FeatureMap()
-
-    # Attempt 1: only include apex points
-    for i in range(len(coords)):
-        if len(f_groups[i]) == 0:
-            continue
-
-        apex = f_groups[i][0]
-        for j in range(len(f_groups[i])):
-            if f_groups[i][j][2] > apex[2]:
-                apex = f_groups[i][j]
-
-        f = ms.Feature()
-        f.setMZ(apex[1])
-        f.setCharge(1)
-        f.setRT(rt)
-        f.setIntensity(apex[2])
-        f.setOverallQuality(10)
-
-        features.push_back(f)
-
-    features.setUniqueIds()
-    return features
 
 def run_feature_finder_centroided_on_experiment(input_map):
     """Function that runs FeatureFinderCentroided on the given input map.
@@ -501,7 +308,8 @@ def link_frag_to_prec(dir, fragments, precursors, window_size, im_epsilon, thres
 
     with open(dir + '/results.txt', 'w') as outfile:
         for precursor in precursor_to_fragments:
-            outfile.write(str(precursor) + ': ' + str(precursor_to_fragments[precursor]) + '\r\n')
+            outfile.write(str(precursor) + ': ' + str(precursor_to_fragments[precursor]) +
+                          '\r\n')
 
     with open(dir + '/results.pkl', 'wb') as handle:
         pickle.dump(precursor_to_fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -522,7 +330,8 @@ def plot_3d_intensity_map(feature_maps, rt_idx_to_rt, mode='3d'):
 
     if mode == '3d':
         ax = fig.add_subplot(111, projection='3d')
-        line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none', depthshade=0)
+        line = ax.scatter(mz, rt , im , c=intensity, s=25, marker='.', edgecolors='none',
+                          depthshade=0)
         ax.set_xlabel('mz')
         ax.set_ylabel('rt')
         ax.set_zlabel('im')
@@ -688,108 +497,96 @@ def compare_baseline_to_openms(
     # return shared_pairs_to_counts
     return
 
-def driver(args):
-    exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
+def driver(args, evalulate=True):
+    if evaluate == False:
+        exp = ms.MSExperiment()
+        ms.MzMLFile().load(args.infile + '.mzML', exp)
 
-    counter_to_og_rt_ms = {}
+        counter_to_og_rt_ms = {}
+        start_idx = 0
+        spectra = exp.getSpectra()
 
-    start_idx = 0
-    spectra = exp.getSpectra()
-    for i in range(start_idx, start_idx + args.num_frames):
-        spec = spectra[i]
-        coords = get_points(spec)
+        for i in range(start_idx, start_idx + args.num_frames):
+            spec = spectra[i]
 
-        # Quick graph
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111, projection='3d')
-        #cxyz = list(zip(*coords))
-        #x, y, z = list(cxyz[0]), list(cxyz[1]), list(cxyz[2])
-        #ax.scatter(x, y, z, c='r', marker='o')
-        #ax.set_xlabel('IM')
-        #ax.set_ylabel('MZ')
-        #ax.set_zlabel('Intensity')
-        #plt.show()
+            new_exp = four_d_spectrum_to_experiment(spec)
+            ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile +
+                                '.mzML', new_exp)
 
-        new_features = fit_plane(coords, spec.getRT())
-        ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
-        break
+            new_features = run_feature_finder_centroided_on_experiment(new_exp)
+            ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile +
+                                      '.featureXML', new_features)
 
-        #new_exp = four_d_spectrum_to_experiment(spec)
-        #ms.MzMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.mzML', new_exp)
+            counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
 
-        #new_features = run_feature_finder_centroided_on_experiment(new_exp)
-        #ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile + '.featureXML', new_features)
-
-        counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
-
-    #with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
-    #    pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
+            pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     #####################################################################################
 
-    #feature_maps = []
-    #rt_idx_to_rt, counter_to_og_rt_ms = {}, {}
-    #counter = 0
+    feature_maps = []
+    rt_idx_to_rt, counter_to_og_rt_ms = {}, {}
+    counter = 0
 
-    #with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'rb') as handle:
-    #    counter_to_og_rt_ms = pickle.load(handle)
+    with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'rb') as handle:
+        counter_to_og_rt_ms = pickle.load(handle)
 
-    #with open(args.outdir + '/frames.txt', 'w') as infile:
-    #    for i in range(0, args.window_size):
-    #        for j in range(i, args.num_frames, args.window_size):
-    #            infile.write(str(j) + "\r\n")
-    #            features = ms.FeatureMap()
-    #            ms.FeatureXMLFile().load(
-    #                args.outdir + '/' + str(j) + '_' + args.outfile + '.featureXML',
-    #                features)
+    with open(args.outdir + '/frames.txt', 'w') as infile:
+        for i in range(0, args.window_size):
+            for j in range(i, args.num_frames, args.window_size):
+                infile.write(str(j) + "\r\n")
+                features = ms.FeatureMap()
+                ms.FeatureXMLFile().load(
+                    args.outdir + '/' + str(j) + '_' + args.outfile + '.featureXML',
+                    features)
 
-    #            for feature in features:
-    #                infile.write(str(feature.getMZ()) \
-    #                + ',' + str(feature.getRT()) + ',' \
-    #                + str(feature.getIntensity()) + "\r\n")
+                for feature in features:
+                    infile.write(str(feature.getMZ()) \
+                    + ',' + str(feature.getRT()) + ',' \
+                    + str(feature.getIntensity()) + "\r\n")
 
-    #            feature_maps.append(features)
-    #            rt_idx_to_rt[counter] = j
-    #            counter+= 1
+                feature_maps.append(features)
+                rt_idx_to_rt[counter] = j
+                counter+= 1
 
-    #possible_species = \
-    #    link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
-    ## plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
+    possible_species = \
+        link_between_frames(feature_maps, rt_idx_to_rt, args.mz_epsilon, args.im_epsilon)
+    # plot_3d_intensity_map(feature_maps, rt_idx_to_rt)
 
-    #precursors, fragments = split_precursors_and_fragments(
-    #    possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
+    precursors, fragments = split_precursors_and_fragments(
+        possible_species, args.window_size, args.rt_length, counter_to_og_rt_ms)
 
-    #with open(args.outdir + '/precursors.txt', 'w') as outfile:
-    #    outfile.write(str(len(precursors)) + "\r\n")
-    #    for precursor in precursors:
-    #        outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
+    with open(args.outdir + '/precursors.txt', 'w') as outfile:
+        outfile.write(str(len(precursors)) + "\r\n")
+        for precursor in precursors:
+            outfile.write(str(precursor) + ": " + str(precursors[precursor]) + "\r\n")
 
-    #with open(args.outdir + '/precursors.pkl', 'wb') as handle:
-    #    pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(args.outdir + '/precursors.pkl', 'wb') as handle:
+        pickle.dump(precursors, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    #with open(args.outdir + '/fragments.txt', 'w') as outfile:
-    #    outfile.write(str(len(fragments)) + "\r\n")
-    #    for fragment in fragments:
-    #        outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
+    with open(args.outdir + '/fragments.txt', 'w') as outfile:
+        outfile.write(str(len(fragments)) + "\r\n")
+        for fragment in fragments:
+            outfile.write(str(fragment) + ": " + str(fragments[fragment]) + "\r\n")
 
-    #with open(args.outdir + '/fragments.pkl', 'wb') as handle:
-    #    pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(args.outdir + '/fragments.pkl', 'wb') as handle:
+        pickle.dump(fragments, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    ####################################################################################
+    #####################################################################################
 
-    #link_frag_to_prec(args.outdir, fragments, precursors, args.window_size, args.im_epsilon, 0)
+    link_frag_to_prec(args.outdir, fragments, precursors, args.window_size,
+                      args.im_epsilon, 0)
 
-    #with open(args.outdir + '/precursors.pkl', 'rb') as handle:
-    #    precursors = pickle.load(handle)
+    with open(args.outdir + '/precursors.pkl', 'rb') as handle:
+        precursors = pickle.load(handle)
 
-    #with open(args.outdir + '/fragments.pkl', 'rb') as handle:
-    #    fragments = pickle.load(handle)
+    with open(args.outdir + '/fragments.pkl', 'rb') as handle:
+        fragments = pickle.load(handle)
 
-    #with open(args.outdir + '/results.pkl', 'rb') as handle:
-    #    results = pickle.load(handle)
+    with open(args.outdir + '/results.pkl', 'rb') as handle:
+        results = pickle.load(handle)
 
-    #compare_baseline_to_openms(args, precursors, fragments, results, '../openms.csv')
+    compare_baseline_to_openms(args, precursors, fragments, results, 'D:/openms.csv')
 
 
 if __name__ == "__main__":
