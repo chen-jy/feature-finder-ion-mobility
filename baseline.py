@@ -216,34 +216,33 @@ def fit_plane(coords, rt):
 
     #plt.show()
 
-    # Construct the found features
-    features = ms.FeatureMap()
-    f_groups = {}
-
     # Group by cluster
+    f_groups = []
     for i in range(len(coords)):
-        #if labels[i] in f_groups:
-        #    f_groups[i].append(coords[i])
-        #elif labels[i] != -1:
-        #    f_groups[i] = [coords[i]]
+        f_groups.append([])
 
+    for i in range(len(coords)):
         if labels[i] != -1:
-            f_groups.setdefault(labels[i], []).append(coords[i])
+            f_groups[labels[i]].append(coords[i])
+
+    features = ms.FeatureMap()
 
     # Attempt 1: only include apex points
-    for key, val in f_groups.items():
-        apex = val[0]
+    for i in range(len(coords)):
+        if len(f_groups[i]) == 0:
+            continue
 
-        for i in range(1, len(val)):
-            if (val[i][2] > apex[2]):
-                apex = val[i]
+        apex = f_groups[i][0]
+        for j in range(len(f_groups[i])):
+            if f_groups[i][j][2] > apex[2]:
+                apex = f_groups[i][j]
 
         f = ms.Feature()
         f.setMZ(apex[1])
-        f.setCharge(1) # TODO
+        f.setCharge(1)
         f.setRT(rt)
         f.setIntensity(apex[2])
-        f.setOverallQuality(1)
+        f.setOverallQuality(10)
 
         features.push_back(f)
 
