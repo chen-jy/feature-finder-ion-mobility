@@ -497,8 +497,8 @@ def compare_baseline_to_openms(
     # return shared_pairs_to_counts
     return
 
-def driver(args, evalulate=True):
-    if evaluate == False:
+def driver(args, find_features=True):
+    if find_features == True:
         exp = ms.MSExperiment()
         ms.MzMLFile().load(args.infile + '.mzML', exp)
 
