@@ -64,7 +64,7 @@ def cus_ransac(points, epsilon, num_iters):
 
     return (a, b, c, d), max_inliers
 
-def fit_plane(coords, spec):
+def find_features(coords, spec):
     lxyzs = [list(x) for x in coords]
     cxyzs = list(zip(*coords))
     points = [list(cxyzs[0]), list(cxyzs[1]), list(cxyzs[2])]
@@ -87,28 +87,18 @@ def fit_plane(coords, spec):
     #fig = plt.figure()
     #ax = Axes3D(fig)
     #ax.scatter3D(llpf[0], llpf[1], llpf[2])
+    #plt.show()
 
-    # DBSCAN clustering
-    db = DBSCAN(eps=1, min_samples=5).fit(lxyzs)
-    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
-    core_samples_mask[db.core_sample_indices_] = True
-    labels = db.labels_
-
-    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
-    n_noise_ = list(labels).count(-1)
-
-    print("Estimated number of clusters: %d" % n_clusters_)
-    print("Estimated number of noise points: %d" % n_noise_)
-
+    # RANSAC first run on all data
     #n = len(coords)
-    #max_iterations = 100
+    #max_iterations = 1000
     #goal_inliers = n * 0.9
 
     #m, b = ransac.run_ransac(lxyzs, estimate, lambda x, y: is_inlier(x, y, 0.01),
     #                         3, goal_inliers, max_iterations)
     #a, b, c, d = m
 
-    #m, ni = cus_ransac(lxyzs)
+    #m, ni = cus_ransac(lxyzs, 0.01, max_iterations)
     #a, b, c, d = m
 
     #fig = plt.figure()
@@ -122,6 +112,7 @@ def fit_plane(coords, spec):
     #xx, yy, zz = plot_plane(a, b, c, d)
     #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
 
+    # RANSAC second run on inliers
     #xyzs_in = rm_outliers(lxyzs, m, 0.01)
     #coords = [tuple(x) for x in xyzs_in]
     #cxyzs = list(zip(*coords))
@@ -131,11 +122,23 @@ def fit_plane(coords, spec):
     #m, best_inliers = ransac.run_ransac(xyzs_in, estimate, lambda x, y: is_inlier(x, y, 0.01),
     #                                    3, goal_inliers, max_iterations)
     #a, b, c, d = m
+
     #xyzs_in = rm_outliers(lxyzs, m, 0.01)
     #xx, yy, zz = plot_plane(a, b, c, d)
     #ax.plot_surface(xx, yy, zz, color=(0, 1, 0, 0.5))
-
     #plt.show()
+
+    # DBSCAN clustering
+    db = DBSCAN(eps=1, min_samples=5).fit(lxyzs)
+    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+    core_samples_mask[db.core_sample_indices_] = True
+    labels = db.labels_
+
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    print("Estimated number of clusters: %d" % n_clusters_)
+    print("Estimated number of noise points: %d" % n_noise_)
 
     # Group by cluster
     f_groups = []
@@ -194,7 +197,10 @@ def init(args):
         #ax.set_zlabel('Intensity')
         #plt.show()
 
-        new_features = fit_plane(points, spec)
+        new_features = find_features(points, spec)
+
+        break
+
         ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile +
                                   '.featureXML', new_features)
 
@@ -217,4 +223,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     init(args)
-    driver(args)
+    #driver(args, find_features=False)
