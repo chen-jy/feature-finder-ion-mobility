@@ -37,9 +37,9 @@ def run_ransac(data, estimate, is_inlier, sample_size, goal_inliers, max_iterati
             if is_inlier(m, data[j]):
                 ic += 1
 
-        print(s)
-        print('estimate:', m,)
-        print('# inliers:', ic)
+        #print(s)
+        #print('estimate:', m,)
+        #print('# inliers:', ic)
 
         if ic > best_ic:
             best_ic = ic
