@@ -45,8 +45,40 @@ def run_old(args):
     print("Number of data points:", len(sorted_cloud))
     print("Time to sort:", end - start)
 
+def run_ff(exp, type):
+    """Runs a feature finder on the given input map.
+
+    Args:
+        exp (MSExperiment): An OpenMS MSExperiment object.
+        type (string): The name of the feature finder to run.
+
+    Returns:
+        FeatureMap: Contains the found features from the given experiment.
+    """
+    ff = ms.FeatureFinder()
+    ff.setLogType(ms.LogType.CMD)
+
+    features = ms.FeatureMap()
+    seeds = ms.FeatureMap()
+    params = ms.FeatureFinder().getParameters(type)
+
+    # Parameters for FeatureFinderCentroided
+    params.__setitem__(b'mass_trace:min_spectra', 5)
+    params.__setitem__(b'mass_trace:max_missing', 2)
+    params.__setitem__(b'seed:min_score', 0.5)
+    params.__setitem__(b'feature:min_score', 0.5)
+    
+    exp.update_ranges()
+    ff.run(name, input_map, features, params, seeds)
+
+    features.setUniqueIds()
+    return features
+
 def find_features(spec):
-    """Make a first pass at binning each spectrum.
+    """Make one pass at binning a spectrum and finding its features.
+
+    Args:
+        spec (MSSpectrum): An OpenMS MSSpectrum object.
     """
     points = get_points(spec)
     # Sort points by IM ascending
@@ -60,25 +92,22 @@ def find_features(spec):
     bin_size = delta_im / num_bins
     bins = [[]] * num_bins
 
+    new_exp = []
+    for i in range(num_bins):
+        new_exp.append(ms.MSExperiment())
+
     # Step 1: assign points to bins
     for i in range(len(points)):
         bin_idx = int((sorted_points[i][3] - first_im) / delta_im)
         bins[bin_idx].append(sorted_points[i])
 
     # Step 2: for each m/z, average the intensities
+    for i in range(num_bins):
+        pass
 
-    new_exp = ms.MSExperiment()
-
-def run(args):
-    """The primary point of execution for the experimental feature finder.
-    """
-    exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
-
-    spectra = exp.getSpectra()
-    for i in range(args.num_frames):
-        spec = spectra[i]
-        find_features(spec)
+    # Step 3: find the features for each bin
+    for i in range(num_bins):
+        pass
 
 if __name__ == "__main__":
     # Includes legacy arguments from baseline.py
@@ -93,4 +122,11 @@ if __name__ == "__main__":
     parser.add_argument('--rt_length', action='store', required=False, type=int)
 
     args = parser.parse_args()
-    run(args)
+
+    exp = ms.MSExperiment()
+    ms.MzMLFile().load(args.infile + '.mzML', exp)
+
+    spectra = exp.getSpectra()
+    for i in range(args.num_frames):
+        spec = spectra[i]
+        find_features(spec)
