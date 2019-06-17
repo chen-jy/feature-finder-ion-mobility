@@ -234,8 +234,31 @@ def bin_spectrum(spec, outdir, outfile):
 
         bins[i].extend(temp_bins[i])
 
-def find_features():
-    pass
+        # Step 3.5: build and add a new spectrum
+        transpose = list(zip(*temp_bins[i]))
+
+        new_spec = ms.MSSpectrum()
+        new_spec.setRT(spec.getRT())
+        new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
+
+        # Add IM data
+        fda = ms.FloatDataArray()
+        for j in list(transpose[3]):
+            fda.push_back(j)
+        new_spec.setFloatDataArrays([fda])
+
+        exps[i].addSpectrum(new_spec)
+
+    # Step 4: run PeakPickerHiRes?
+
+def find_features(outdir, outfile, ff_type='centroided'):
+    for i in range(num_bins):
+        ms.MzMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' + str(i) +
+                            '.mzML', exps[i])
+
+        features = run_ff(exps[i], ff_type)
+        ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' +
+                                  str(i) + '.featureXML', features)
 
 if __name__ == "__main__":
     # Includes legacy arguments from baseline.py
@@ -267,3 +290,5 @@ if __name__ == "__main__":
 
         print("Processing MS1, RT", spec.getRT())
         bin_spectrum(spec, args.outdir, args.outfile)
+
+    find_features(args.outdir, args.outfile, 'centroided')
