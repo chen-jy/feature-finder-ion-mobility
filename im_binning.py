@@ -37,7 +37,8 @@ def get_extrema(spectra):
     for i in range(len(spectra)):
         spec = spectra[i]
         new_points = get_points(spec)
-        im_values.extend(new_points[3])
+        transpose = list(zip(*new_points))
+        im_values.extend(list(transpose[3]))
 
     sorted_im = sorted(im_values)
     return (sorted_im[0], sorted_im[-1])
@@ -48,6 +49,8 @@ def setup_bins(spectra):
     Args:
         spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
     """
+    global first_im, last_im, delta_im, bin_size, bins, exps
+
     print('Getting binning bounds.....................', end='', flush=True)
     first_im, last_im = get_extrema(spectra)
     print('Done')
@@ -59,7 +62,7 @@ def setup_bins(spectra):
 
     for i in range(num_bins):
         bins.append([])
-        exps.append(ms.MSExperiment)
+        exps.append(ms.MSExperiment())
 
 def run_ff(exp, type):
     """Runs a feature finder on the given input map.
@@ -188,6 +191,8 @@ def bin_spectrum(spec, outdir, outfile):
         outdir (string): The output directory for writing FeatureXML files.
         outfile (string): An identifier for this series of runs.
     """
+    global bins, exps
+
     points = get_points(spec)
     # Sort points by IM ascending
     sorted_points = sorted(points, key=itemgetter(3))
