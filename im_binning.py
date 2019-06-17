@@ -18,8 +18,7 @@ def get_points(spec):
     point_data = zip(*spec.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
 
-@deprecated
-def run_old(args):
+def run(args):
     """Collects all points from all spectra.
     """
     exp = ms.MSExperiment()
@@ -68,8 +67,8 @@ def run_ff(exp, type):
     params.__setitem__(b'seed:min_score', 0.5)
     params.__setitem__(b'feature:min_score', 0.5)
     
-    exp.update_ranges()
-    ff.run(name, input_map, features, params, seeds)
+    exp.updateRanges()
+    ff.run(type, exp, features, params, seeds)
 
     features.setUniqueIds()
     return features
@@ -93,19 +92,20 @@ def find_features(spec, outdir, outfile, spec_idx=0):
     
     num_bins = 50
     bin_size = delta_im / num_bins
-    bins = [[]] * num_bins
-
     # For successive passes, use offset_im to shift bins
     offset_delta, pass_num = 0.05, 1
 
-    new_exp = []
+    bins, new_exp = [], []
     for i in range(num_bins):
+        bins.append([])
         new_exp.append(ms.MSExperiment())
 
     # Step 1: assign points to bins
     for i in range(len(points)):
         # Need to adapt this formula for offset_im
-        bin_idx = int((sorted_points[i][3] - first_im) / delta_im)
+        bin_idx = int((sorted_points[i][3] - first_im) / bin_size)
+        if bin_idx >= num_bins:
+            bin_idx = num_bins - 1
         bins[bin_idx].append(sorted_points[i])
 
     # Step 2: for each m/z, average the intensities
@@ -124,8 +124,8 @@ def find_features(spec, outdir, outfile, spec_idx=0):
                 for k in range(mz_start, mz_start + num_mz):
                     bins[i][k][2] = run_intensity
 
-                mz_start, num_mz, curr_mz = j, 0, bins[i][j][1]
-                run_intensity = 0
+                mz_start, num_mz, curr_mz = j, 1, bins[i][j][1]
+                run_intensity = bins[i][j][2]
 
         # Takes care of the last slice (if required)
         if num_mz > 0:
@@ -138,7 +138,7 @@ def find_features(spec, outdir, outfile, spec_idx=0):
 
         new_spec = ms.MSSpectrum()
         new_spec.setRT(spec.getRT())
-        new_spec.setPeaks((list(transpose[1]), list(transpose[2])))
+        new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
 
         fda = ms.FloatDataArray()
         for j in list(transpose[3]):
@@ -159,7 +159,7 @@ def find_features(spec, outdir, outfile, spec_idx=0):
 
 if __name__ == "__main__":
     # Includes legacy arguments from baseline.py
-    parser = argparse.ArgumentParser(description='FragToPre Clustering Baseline')
+    parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder')
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
@@ -172,7 +172,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     exp = ms.MSExperiment()
+    print('Loading mzML input file')
     ms.MzMLFile().load(args.infile + '.mzML', exp)
+    print('mzML input file loaded')
 
     spectra = exp.getSpectra()
     for i in range(args.num_frames):
