@@ -257,11 +257,15 @@ def bin_spectrum(spec, outdir, outfile):
     # Step 4: run PeakPickerHiRes?
 
 def find_features(outdir, outfile, ff_type='centroided'):
-    for i in range(num_bins):
-        ms.MzMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' + str(i) +
-                            '.mzML', exps[i])
+    pp = ms.PeakPickerHiRes()
+    new_exp = ms.MSExperiment()
 
-        features = run_ff(exps[i], ff_type)
+    for i in range(num_bins):
+        pp.pickExperiment(exps[i], new_exp)
+        ms.MzMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' + str(i) +
+                            '.mzML', new_exp)
+
+        features = run_ff(new_exp, ff_type)
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' +
                                   str(i) + '.featureXML', features)
 
