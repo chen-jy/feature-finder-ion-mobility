@@ -42,6 +42,25 @@ def get_extrema(spectra):
     sorted_im = sorted(im_values)
     return (sorted_im[0], sorted_im[-1])
 
+def setup_bins(spectra):
+    """Sets up the global bins using the smallest and greatest ion mobility values.
+
+    Args:
+        spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
+    """
+    print('Getting binning bounds.....................', end='', flush=True)
+    first_im, last_im = get_extrema(spectra)
+    print('Done')
+
+    delta_im = last_im - first_im
+    bin_size = delta_im / num_bins
+    print("  Smallest IM:", first_im)
+    print("  Largest IM:", last_im)
+
+    for i in range(num_bins):
+        bins.append([])
+        exps.append(ms.MSExperiment)
+
 def run_ff(exp, type):
     """Runs a feature finder on the given input map.
 
@@ -158,7 +177,64 @@ def find_features_old(spec, outdir, outfile, spec_idx=0):
                                   '-pass' + str(pass_num) + '-bin' + str(i) +
                                   '.featureXML', features)
 
-def find_features(spec, outdir, outfile, spec_idx=0):
+def bin_spectrum(spec, outdir, outfile):
+    """Makes a single pass at binning a single spectrum. Needs to eventually support
+    an overlapping series of bins (multiple passes).
+
+    Results are saved in the global array <bins>.
+
+    Args:
+        spec (MSSpectrum): An OpenMS MSSpectrum object.
+        outdir (string): The output directory for writing FeatureXML files.
+        outfile (string): An identifier for this series of runs.
+    """
+    points = get_points(spec)
+    # Sort points by IM ascending
+    sorted_points = sorted(points, key=itemgetter(3))
+
+    temp_bins = []
+    for i in range(num_bins):
+        temp_bins.append([])
+
+    # Step 1: assign points to bins
+    for i in range(len(sorted_points)):
+        bin_idx = int((sorted_points[i][3] - first_im) / bin_size)
+        if bin_idx >= num_bins:
+            bin_idx = num_bins - 1
+        temp_bins[bin_idx].append(sorted_points[i])
+
+    # Step 2: run PeakPickerHiRes?
+
+    # Step 3: for each m/z, average the intensities
+    for i in range(num_bins):
+        if len(temp_bins[i]) == 0:
+            continue
+
+        temp_bins[i] = sorted(temp_bins[i], key=itemgetter(1))
+        mz_start, num_mz, curr_mz = 0, 0, temp_bins[i][0][1]
+        running_intensity = 0
+
+        for j in range(len(temp_bins[i])):
+            if (temp_bins[i][j][1] == curr_mz):
+                num_mz += 1
+                running_intensity += temp_bins[i][j][2]
+            else:
+                # Reached a new m/z slice; update the previous intensities
+                for k in range(mz_start, mz_start + num_mz):
+                    temp_bins[i][k][2] = running_intensity
+
+                # Update the current counters
+                mz_start, num_mz, curr_mz = j, 1, temp_bins[i][j][1]
+                running_intensity = temp_bins[i][j][2]
+
+        # Take care of the last slice (if required)
+        if num_mz > 0:
+            for k in range(mz_start, mz_start + num_mz):
+                temp_bins[i][k][2] = running_intensity
+
+        bins[i].extend(temp_bins[i])
+
+def find_features():
     pass
 
 if __name__ == "__main__":
@@ -181,15 +257,7 @@ if __name__ == "__main__":
     print('Done')
 
     spectra = exp.getSpectra()
-
-    print('Getting binning bounds.....................', end='', flush=True)
-    first_im, last_im = get_extrema(spectra)
-    print('Done')
-
-    delta_im = last_im - first_im
-    bin_size = delta_im / num_bins
-    print("  Smallest IM:", first_im)
-    print("  Largest IM:", last_im, end='\n\n')
+    setup_bins(spectra)
 
     for i in range(len(spectra)):
         spec = spectra[i]
@@ -198,4 +266,4 @@ if __name__ == "__main__":
             continue
 
         print("Processing MS1, RT", spec.getRT())
-        find_features(spec, args.outdir, args.outfile, i)
+        bin_spectrum(spec, args.outdir, args.outfile)
