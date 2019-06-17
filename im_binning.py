@@ -3,6 +3,11 @@ from baseline import *
 import time
 from operator import itemgetter
 
+# Globals and constants
+bins, exps = [], []
+first_im, last_im, delta_im = 0, 0, 0
+num_bins, bin_size = 10, 0
+
 def get_points(spec):
     """Data preprocessing to extract the retention time, mass to charge, intensity,
     and ion mobility for each peak in a spectrum.
@@ -11,38 +16,31 @@ def get_points(spec):
         spec (MSSpectrum): An OpenMS MSSpectrum object.
 
     Returns:
-        list<list<double, double, double, double>>: A list of lists, where each
-        interior list holds RT, MZ, intensity, and IM information (in that order)
-        for a single peak in the spectrum. The exterior list is unsorted.
+        list<list<float, float, float, float>>: A list of lists, where each interior
+        list holds RT, MZ, intensity, and IM information (in that order) for a single
+        peak in the spectrum. The exterior list is unsorted.
     """
     point_data = zip(*spec.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
 
-def run(args):
-    """Collects all points from all spectra.
+def get_extrema(spectra):
+    """Finds the smallest and largest IM values in an experiment.
+
+    Args:
+        spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
+
+    Returns:
+        tuple<float, float>: The smallest and largest IM values in the experiment.
     """
-    exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
-    print("Raw data file loaded; beginning execution")
+    im_values = []
 
-    # Store the RT, MZ, intensity, and IM data for every peak in every spectrum
-    point_cloud = []
-
-    spectra = exp.getSpectra()
-    for i in range(args.num_frames):
+    for i in range(len(spectra)):
         spec = spectra[i]
-
         new_points = get_points(spec)
-        point_cloud.extend(new_points)
+        im_values.extend(new_points[3])
 
-    print("Sorting data points")
-    # Sort points by IM ascending (using lambda significantly slower)
-    start = time.time()
-    #sorted_cloud = sorted(point_cloud, key=lambda x: x[3])
-    sorted_cloud = sorted(point_cloud, key=itemgetter(3))
-    end = time.time()
-    print("Number of data points:", len(sorted_cloud))
-    print("Time to sort:", end - start)
+    sorted_im = sorted(im_values)
+    return (sorted_im[0], sorted_im[-1])
 
 def run_ff(exp, type):
     """Runs a feature finder on the given input map.
@@ -73,7 +71,7 @@ def run_ff(exp, type):
     features.setUniqueIds()
     return features
 
-def find_features(spec, outdir, outfile, spec_idx=0):
+def find_features_old(spec, outdir, outfile, spec_idx=0):
     """Make one pass at binning a spectrum and finding its features.
 
     Args:
@@ -110,6 +108,9 @@ def find_features(spec, outdir, outfile, spec_idx=0):
 
     # Step 2: for each m/z, average the intensities
     for i in range(num_bins):
+        if len(bins[i]) == 0:
+            continue
+
         bins[i] = sorted(bins[i], key=itemgetter(1))
         mz_start, num_mz, curr_mz = 0, 0, bins[i][0][1]
         run_intensity = 0
@@ -157,6 +158,9 @@ def find_features(spec, outdir, outfile, spec_idx=0):
                                   '-pass' + str(pass_num) + '-bin' + str(i) +
                                   '.featureXML', features)
 
+def find_features(spec, outdir, outfile, spec_idx=0):
+    pass
+
 if __name__ == "__main__":
     # Includes legacy arguments from baseline.py
     parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder')
@@ -170,13 +174,28 @@ if __name__ == "__main__":
     parser.add_argument('--rt_length', action='store', required=False, type=int)
 
     args = parser.parse_args()
-
+    
     exp = ms.MSExperiment()
-    print('Loading mzML input file')
+    print('Loading mzML input file....................', end='', flush=True)
     ms.MzMLFile().load(args.infile + '.mzML', exp)
-    print('mzML input file loaded')
+    print('Done')
 
     spectra = exp.getSpectra()
-    for i in range(args.num_frames):
+
+    print('Getting binning bounds.....................', end='', flush=True)
+    first_im, last_im = get_extrema(spectra)
+    print('Done')
+
+    delta_im = last_im - first_im
+    bin_size = delta_im / num_bins
+    print("  Smallest IM:", first_im)
+    print("  Largest IM:", last_im, end='\n\n')
+
+    for i in range(len(spectra)):
         spec = spectra[i]
+        # Currently only processes MS1 spectra
+        if (spec.getMSLevel() != 1):
+            continue
+
+        print("Processing MS1, RT", spec.getRT())
         find_features(spec, args.outdir, args.outfile, i)
