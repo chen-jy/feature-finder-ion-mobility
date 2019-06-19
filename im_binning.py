@@ -6,7 +6,11 @@ from operator import itemgetter
 # Globals and constants
 bins, exps = [], []
 first_im, last_im, delta_im = 0, 0, 0
-num_bins, bin_size = 10, 0
+num_bins, bin_size = 50, 0
+
+# For the second pass (shift the bins by 50%)
+bins2, exps2 = [], []
+offset_im = 0
 
 def get_points(spec):
     """Data preprocessing to extract the retention time, mass to charge, intensity,
@@ -21,6 +25,18 @@ def get_points(spec):
         peak in the spectrum. The exterior list is unsorted.
     """
     point_data = zip(*spec.get_peaks(), spec.getFloatDataArrays()[0])
+    return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
+
+def get_points_pp(spec_pp, spec):
+    """Does the same thing as get_points(), but for a spectrum that has been peak-
+    picked (losing its IM information in the process).
+
+    Args:
+        spec_pp (MSSpectrum): An OpenMS MSSpectrum object that has been peak-picked.
+        spec (MSSpectrum): An OpenMS MSSpectrum object, not peak-picked, corresponding
+            to spec_pp.
+    """
+    point_data = zip(*spec_pp.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
 
 def get_extrema(spectra):
@@ -50,9 +66,12 @@ def setup_bins(spectra):
         spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
     """
     global first_im, last_im, delta_im, bin_size, bins, exps
+    global offset_im, bins2, exps2
 
     print('Getting binning bounds.....................', end='', flush=True)
     first_im, last_im = get_extrema(spectra)
+    # Approximation for debugging
+    #first_im, last_im = 0.5, 1.7
     print('Done')
 
     delta_im = last_im - first_im
@@ -63,6 +82,13 @@ def setup_bins(spectra):
     for i in range(num_bins):
         bins.append([])
         exps.append(ms.MSExperiment())
+
+    offset_im = bin_size / 2.0 + first_im
+    
+    # Need to take into account the first and last half-bins
+    for i in range(num_bins + 1):
+        bins2.append([])
+        exps2.append(ms.MSExperiment())
 
 def run_ff(exp, type):
     """Runs a feature finder on the given input map.
@@ -192,6 +218,12 @@ def bin_spectrum(spec, outdir, outfile):
         outfile (string): An identifier for this series of runs.
     """
     global bins, exps
+    global bins2, exps2
+
+    #pp = ms.PeakPickerHiRes()
+    #spec_pp = ms.MSSpectrum()
+    #pp.pick(spec, spec_pp)
+    #points = get_points_pp(spec_pp, spec)
 
     points = get_points(spec)
     # Sort points by IM ascending
@@ -201,16 +233,26 @@ def bin_spectrum(spec, outdir, outfile):
     for i in range(num_bins):
         temp_bins.append([])
 
+    temp_bins2 = []
+    for i in range(num_bins + 1):
+        temp_bins2.append([])
+
     # Step 1: assign points to bins
     for i in range(len(sorted_points)):
         bin_idx = int((sorted_points[i][3] - first_im) / bin_size)
         if bin_idx >= num_bins:
             bin_idx = num_bins - 1
-        temp_bins[bin_idx].append(sorted_points[i])
+        temp_bins[bin_idx].append(list(sorted_points[i]))
 
-    # Step 2: run PeakPickerHiRes?
+        if sorted_points[i][3] < offset_im:
+            temp_bins2[0].append(list(sorted_points[i]))
+        else:
+            bin_idx = int((sorted_points[i][3] - offset_im) / bin_size) + 1
+            if bin_idx > num_bins:
+                bin_idx = num_bins
+            temp_bins2[bin_idx].append(list(sorted_points[i]))
 
-    # Step 3: for each m/z, average the intensities
+    # Step 2.1: for each m/z, sum the intensities (pass 1)
     for i in range(num_bins):
         if len(temp_bins[i]) == 0:
             continue
@@ -239,7 +281,7 @@ def bin_spectrum(spec, outdir, outfile):
 
         bins[i].extend(temp_bins[i])
 
-        # Step 3.5: build and add a new spectrum
+        # Step 2.1.5: build and add a new spectrum
         transpose = list(zip(*temp_bins[i]))
 
         new_spec = ms.MSSpectrum()
@@ -254,20 +296,69 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps[i].addSpectrum(new_spec)
 
-    # Step 4: run PeakPickerHiRes?
+    # Step 2.2: for each m/z, sum the intensities (pass 2)
+    for i in range(num_bins + 1):
+        if len(temp_bins2[i]) == 0:
+            continue
+
+        temp_bins2[i] = sorted(temp_bins2[i], key=itemgetter(1))
+        mz_start, num_mz, curr_mz = 0, 0, temp_bins2[i][0][1]
+        running_intensity = 0
+
+        for j in range(len(temp_bins2[i])):
+            if (temp_bins2[i][j][1] == curr_mz):
+                num_mz += 1
+                running_intensity += temp_bins2[i][j][2]
+            else:
+                for k in range(mz_start, mz_start + num_mz):
+                    temp_bins2[i][k][2] = running_intensity
+
+                mz_start, num_mz, curr_mz = j, 1, temp_bins2[i][j][1]
+                running_intensity = temp_bins2[i][j][2]
+
+        if num_mz > 0:
+            for k in range(mz_start, mz_start + num_mz):
+                temp_bins2[i][k][2] = running_intensity
+
+        bins2[i].extend(temp_bins2[i])
+
+        # Step 2.2.5: build and add a new spectrum
+        transpose = list(zip(*temp_bins2[i]))
+
+        new_spec = ms.MSSpectrum()
+        new_spec.setRT(spec.getRT())
+        new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
+
+        fda = ms.FloatDataArray()
+        for j in list(transpose[3]):
+            fda.push_back(j)
+        new_spec.setFloatDataArrays([fda])
+
+        exps2[i].addSpectrum(new_spec)
 
 def find_features(outdir, outfile, ff_type='centroided'):
-    pp = ms.PeakPickerHiRes()
-    new_exp = ms.MSExperiment()
+    #pp = ms.PeakPickerHiRes()
 
     for i in range(num_bins):
-        pp.pickExperiment(exps[i], new_exp)
-        ms.MzMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' + str(i) +
-                            '.mzML', new_exp)
+        #new_exp = ms.MSExperiment()
+        #pp.pickExperiment(exps[i], new_exp)
+        ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) + '.mzML',
+                            exps[i])
 
-        features = run_ff(new_exp, ff_type)
-        ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass' + '1' + '-bin' +
-                                  str(i) + '.featureXML', features)
+        features = run_ff(exps[i], ff_type)
+        ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
+                                  '.featureXML', features)
+
+    # Second pass
+    for i in range(num_bins + 1):
+        #new_exp = ms.MSExperiment()
+        #pp.pickExperiment(exps2[i], new_exp)
+        ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) + '.mzML',
+                            exps2[i])
+
+        features = run_ff(exps2[i], ff_type)
+        ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
+                                  '.featureXML', features)
 
 if __name__ == "__main__":
     # Includes legacy arguments from baseline.py
