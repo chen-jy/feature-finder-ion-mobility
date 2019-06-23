@@ -35,6 +35,11 @@ def get_points_pp(spec_pp, spec):
         spec_pp (MSSpectrum): An OpenMS MSSpectrum object that has been peak-picked.
         spec (MSSpectrum): An OpenMS MSSpectrum object, not peak-picked, corresponding
             to spec_pp.
+
+    Returns:
+        list<list<float, float, float, float>>: A list of lists, where each interior
+        list holds RT, MZ, intensity, and IM information (in that order) for a single
+        peak in the spectrum. The exterior list is unsorted.
     """
     point_data = zip(*spec_pp.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
@@ -48,16 +53,19 @@ def get_extrema(spectra):
     Returns:
         tuple<float, float>: The smallest and largest IM values in the experiment.
     """
-    im_values = []
+    smallest_im, largest_im = float('inf'), -1.0
 
     for i in range(len(spectra)):
         spec = spectra[i]
         new_points = get_points(spec)
-        transpose = list(zip(*new_points))
-        im_values.extend(list(transpose[3]))
 
-    sorted_im = sorted(im_values)
-    return (sorted_im[0], sorted_im[-1])
+        for point in new_points:
+            if point[3] < smallest_im:
+                smallest_im = point[3]
+            if point[3] > largest_im:
+                largest_im = point[3]
+
+    return smallest_im, largest_im
 
 def setup_bins(spectra):
     """Sets up the global bins using the smallest and greatest ion mobility values.
@@ -77,7 +85,7 @@ def setup_bins(spectra):
     delta_im = last_im - first_im
     bin_size = delta_im / num_bins
     print("  Smallest IM:", first_im)
-    print("  Largest IM:", last_im)
+    print("  Largest IM:", last_im, end='\n\n')
 
     for i in range(num_bins):
         bins.append([])
@@ -229,6 +237,7 @@ def bin_spectrum(spec, outdir, outfile):
     # Sort points by IM ascending
     sorted_points = sorted(points, key=itemgetter(3))
 
+    # To circumvent python's aliasing
     temp_bins = []
     for i in range(num_bins):
         temp_bins.append([])
@@ -242,6 +251,7 @@ def bin_spectrum(spec, outdir, outfile):
         bin_idx = int((sorted_points[i][3] - first_im) / bin_size)
         if bin_idx >= num_bins:
             bin_idx = num_bins - 1
+        # Need to cast the list to list to prevent aliasing
         temp_bins[bin_idx].append(list(sorted_points[i]))
 
         if sorted_points[i][3] < offset_im:
@@ -252,7 +262,7 @@ def bin_spectrum(spec, outdir, outfile):
                 bin_idx = num_bins
             temp_bins2[bin_idx].append(list(sorted_points[i]))
 
-    # Step 2.1: for each m/z, sum the intensities (pass 1)
+    # Step 2: for each m/z, sum the intensities (pass 1)
     for i in range(num_bins):
         if len(temp_bins[i]) == 0:
             continue
@@ -281,7 +291,7 @@ def bin_spectrum(spec, outdir, outfile):
 
         bins[i].extend(temp_bins[i])
 
-        # Step 2.1.5: build and add a new spectrum
+        # Step 2.5: build and add a new spectrum
         transpose = list(zip(*temp_bins[i]))
 
         new_spec = ms.MSSpectrum()
@@ -296,7 +306,7 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps[i].addSpectrum(new_spec)
 
-    # Step 2.2: for each m/z, sum the intensities (pass 2)
+    # Step 3: for each m/z, sum the intensities (pass 2)
     for i in range(num_bins + 1):
         if len(temp_bins2[i]) == 0:
             continue
@@ -322,7 +332,7 @@ def bin_spectrum(spec, outdir, outfile):
 
         bins2[i].extend(temp_bins2[i])
 
-        # Step 2.2.5: build and add a new spectrum
+        # Step 3.5: build and add a new spectrum
         transpose = list(zip(*temp_bins2[i]))
 
         new_spec = ms.MSSpectrum()
@@ -361,16 +371,10 @@ def find_features(outdir, outfile, ff_type='centroided'):
                                   '.featureXML', features)
 
 if __name__ == "__main__":
-    # Includes legacy arguments from baseline.py
-    parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder')
+    parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder.')
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
-    parser.add_argument('--mz_epsilon', action='store', required=False, type=float)
-    parser.add_argument('--im_epsilon', action='store', required=False, type=float)
-    parser.add_argument('--num_frames', action='store', required=False, type=int)
-    parser.add_argument('--window_size', action='store', required=False, type=int)
-    parser.add_argument('--rt_length', action='store', required=False, type=int)
 
     args = parser.parse_args()
     
@@ -384,11 +388,11 @@ if __name__ == "__main__":
 
     for i in range(len(spectra)):
         spec = spectra[i]
-        # Currently only processes MS1 spectra
+        # Currently only process MS1 spectra
         if (spec.getMSLevel() != 1):
             continue
 
-        print("Processing MS1, RT", spec.getRT())
+        print("Processing", spec.getMSLevel(), "RT", spec.getRT())
         bin_spectrum(spec, args.outdir, args.outfile)
 
     find_features(args.outdir, args.outfile, 'centroided')
