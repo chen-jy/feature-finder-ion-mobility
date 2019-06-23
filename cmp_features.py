@@ -16,16 +16,15 @@ def get_f_points(features):
         features (MSExperiment): An OpenMS MSExperiment object.
 
     Returns:
-        list<list<float>, list<float>, list<float>>: A 3xN array of RT, MZ, and intensity
-           data points, in that order.
+        list<list<float, float, float>>: A list of lists, where each interior list
+            contains the RT, MZ, and intensity of a single data point. The exterior list
+            is unsorted.
     """
-    arr_rt, arr_mz, arr_intensity = [], [], []
+    data_points = []
     for feature in features:
-        arr_rt.append(feature.getRT())
-        arr_mz.append(feature.getMZ())
-        arr_intensity.append(feature.getIntensity())
+        data_points.append([feature.getRT(), feature.getMZ(), feature.getIntensity()])
 
-    return [arr_rt, arr_mz, arr_intensity]
+    return data_points
 
 def compare_features(found_features_map, openms_features_map):
     """Compares two sets of features (namely, those found by the new feature finder and
@@ -36,6 +35,9 @@ def compare_features(found_features_map, openms_features_map):
             found by the new feature finder.
         openms_features_map (FeatureMap): An OpenMS FeatureMap object containing
             features found by OpenMS.
+
+    Returns:
+        int: The number of features found in both feature maps (within a threshold).
     """
     f1 = get_f_points(found_features_map)
     f2 = get_f_points(openms_features_map)
@@ -44,20 +46,27 @@ def compare_features(found_features_map, openms_features_map):
     found_features = sorted(f1, key=itemgetter(0, 1, 2))
     openms_features = sorted(f2, key=itemgetter(0, 1, 2))
 
-    # Need to implement:
-    # 1. Set a threshold for feature similarity
-    # 2. Use binary search instead of O(N^2) passes => O(N lgN)
+    rt_threshold = 0.01
+    mz_threshold = 0.01
+    intensity_threshold = 0.01
 
     num_intersecting = 0
 
+    # Should implement a binary search in O(N lg N) instead of O(N^2)
     for ffeature in found_features:
         for ofeature in openms_features:
             if ffeature == ofeature:
+                num_intersecting += 1
+            elif abs(ffeature[0] - ofeature[0]) < rt_threshold and \
+                 abs(ffeature[1] - ofeature[1]) < mz_threshold and \
+                 abs(ffeature[2] - ofeature[2]) < intensity_threshold:
                 num_intersecting += 1
 
     print("found features:", len(found_features))
     print("openms features:", len(openms_features))
     print("intersecting features:", num_intersecting)
+
+    return num_intersecting
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison.')
