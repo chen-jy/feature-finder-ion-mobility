@@ -6,7 +6,7 @@ from operator import itemgetter
 # Globals and constants
 bins, exps = [], []
 first_im, last_im, delta_im = 0, 0, 0
-num_bins, bin_size = 50, 0
+num_bins, bin_size = 1, 0
 
 # For the second pass (shift the bins by 50%)
 bins2, exps2 = [], []
@@ -126,93 +126,6 @@ def run_ff(exp, type):
 
     features.setUniqueIds()
     return features
-
-def find_features_old(spec, outdir, outfile, spec_idx=0):
-    """Make one pass at binning a spectrum and finding its features.
-
-    Args:
-        spec (MSSpectrum): An OpenMS MSSpectrum object.
-        outdir (string): The output directory for FeatureXML files.
-        outfile (string): A string to identify this series of runs.
-        spec_idx (int): The index of this spectrum in a series of spectra.
-    """
-    points = get_points(spec)
-    # Sort points by IM ascending
-    sorted_points = sorted(points, key=itemgetter(3))
-
-    # Position of bin i (0-indexed) = i * bin_size + first_im
-    first_im, last_im = sorted_points[0][3], sorted_points[len(points) - 1][3]
-    delta_im, offset_im = last_im - first_im, 0
-    
-    num_bins = 50
-    bin_size = delta_im / num_bins
-    # For successive passes, use offset_im to shift bins
-    offset_delta, pass_num = 0.05, 1
-
-    bins, new_exp = [], []
-    for i in range(num_bins):
-        bins.append([])
-        new_exp.append(ms.MSExperiment())
-
-    # Step 1: assign points to bins
-    for i in range(len(points)):
-        # Need to adapt this formula for offset_im
-        bin_idx = int((sorted_points[i][3] - first_im) / bin_size)
-        if bin_idx >= num_bins:
-            bin_idx = num_bins - 1
-        bins[bin_idx].append(sorted_points[i])
-
-    # Step 2: for each m/z, average the intensities
-    for i in range(num_bins):
-        if len(bins[i]) == 0:
-            continue
-
-        bins[i] = sorted(bins[i], key=itemgetter(1))
-        mz_start, num_mz, curr_mz = 0, 0, bins[i][0][1]
-        run_intensity = 0
-
-        for j in range(len(bins[i])):
-            if (bins[i][j][1] == curr_mz):
-                num_mz += 1
-                run_intensity += bins[i][j][2]
-            else:
-                # Reached a new m/z slice; update the previous intensities
-                run_intensity /= num_mz
-                for k in range(mz_start, mz_start + num_mz):
-                    bins[i][k][2] = run_intensity
-
-                mz_start, num_mz, curr_mz = j, 1, bins[i][j][1]
-                run_intensity = bins[i][j][2]
-
-        # Takes care of the last slice (if required)
-        if num_mz > 0:
-            run_intensity /= num_mz
-            for k in range(mz_start, mz_start + num_mz):
-                bins[i][k][2] = run_intensity
-
-        # Get the arrays of RT, MZ, Intensity, and IM
-        transpose = list(zip(*bins[i]))
-
-        new_spec = ms.MSSpectrum()
-        new_spec.setRT(spec.getRT())
-        new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
-
-        fda = ms.FloatDataArray()
-        for j in list(transpose[3]):
-            fda.push_back(j)
-        new_spec.setFloatDataArrays([fda])
-
-        new_exp[i].addSpectrum(new_spec)
-        ms.MzMLFile().store(outdir + '/' + outfile + '-spec' + str(spec_idx) + '-pass' +
-                            str(pass_num) + '-bin' + str(i) + '.mzML', new_exp[i])
-
-    # Step 3: find the features for each bin
-    ff_type = 'centroided'
-    for i in range(num_bins):
-        features = run_ff(new_exp[i], ff_type)
-        ms.FeatureXMLFile().store(outdir + '/' + outfile + '-spec' + str(spec_idx) +
-                                  '-pass' + str(pass_num) + '-bin' + str(i) +
-                                  '.featureXML', features)
 
 def bin_spectrum(spec, outdir, outfile):
     """Makes a single pass at binning a single spectrum. Needs to eventually support
@@ -346,8 +259,26 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps2[i].addSpectrum(new_spec)
 
+def match_features(features1, features2):
+    features = []
+    return features
+
 def find_features(outdir, outfile, ff_type='centroided'):
+    """Runs an existing feature finder on the experiment bins and writes the features to
+    files. Each bin (for each pass) gets its own mzML and featureXML files, each pass
+    gets a combined featureXML file, and the overall experiment gets a matched featureXML
+    file (from both passes).
+
+    Args:
+        outdir (string): The targeted output directory. It must already exist.
+        outfile (string): The name of this experiment.
+        ff_type (string): The name of the existing feature finder to use. Defaults to
+            centroided for peak-picked data.
+    """
+
     #pp = ms.PeakPickerHiRes()
+    features = [[], []]
+    total_features = [[], []]
 
     for i in range(num_bins):
         #new_exp = ms.MSExperiment()
@@ -355,9 +286,12 @@ def find_features(outdir, outfile, ff_type='centroided'):
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) + '.mzML',
                             exps[i])
 
-        features = run_ff(exps[i], ff_type)
+        temp_features = run_ff(exps[i], ff_type)
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
-                                  '.featureXML', features)
+                                  '.featureXML', temp_features)
+
+        features[0].append(temp_features)
+        total_features[0].extend(temp_features)
 
     # Second pass
     for i in range(num_bins + 1):
@@ -366,9 +300,19 @@ def find_features(outdir, outfile, ff_type='centroided'):
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) + '.mzML',
                             exps2[i])
 
-        features = run_ff(exps2[i], ff_type)
+        temp_features = run_ff(exps2[i], ff_type)
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
-                                  '.featureXML', features)
+                                  '.featureXML', temp_features)
+
+        features[1].append(temp_features)
+        total_features[1].extend(temp_features)
+
+    # Combine features
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.mzML', total_features[0])
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.mzML', total_features[1])
+
+    matched_features = match_features(features[0], features[1])
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '.mzML', matched_features)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder.')
