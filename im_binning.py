@@ -6,7 +6,7 @@ from operator import itemgetter
 # Globals and constants
 bins, exps = [], []
 first_im, last_im, delta_im = 0, 0, 0
-num_bins, bin_size = 1, 0
+num_bins, bin_size = 10, 0
 
 # For the second pass (shift the bins by 50%)
 bins2, exps2 = [], []
@@ -259,8 +259,40 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps2[i].addSpectrum(new_spec)
 
+def similar_features(feature1, feature2):
+    rt_threshold = 0.1
+    mz_threshold = 0.1
+    intensity_threshold = 0.1
+
+    return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
+            abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold and
+            abs(feature1.getIntensity() - feature2.getIntensity()) < intensity_threshold)
+
 def match_features(features1, features2):
+    if len(features1) == 1:
+        return features1[0]
+    
     features = []
+    for i in range(len(features1)):
+        for j in range(len(features1[i])):
+            f1 = features1[i][j]
+
+            for k in range(len(features2[i])):
+                f2 = features2[i][k]
+
+                if similar_features(f1, f2):
+                    pass
+                elif f1 not in features:
+                    features.append(f1)
+
+            for k in range(len(features2[i + 1])):
+                f2 = features2[i + 1][k]
+
+                if similar_features(f1, f2):
+                    pass
+                elif f1 not in features:
+                    features.append(f1)
+
     return features
 
 def find_features(outdir, outfile, ff_type='centroided'):
