@@ -40,7 +40,8 @@ def compare_features(found_features_map, openms_features_map):
             features found by OpenMS.
 
     Returns:
-        int: The number of features found in both feature maps (within a threshold).
+        list<Feature>: A list of features found in both feature maps (within a certain
+            threshold).
     """
     f1 = get_f_points(found_features_map)
     f2 = get_f_points(openms_features_map)
@@ -54,22 +55,25 @@ def compare_features(found_features_map, openms_features_map):
     intensity_threshold = 0.01
 
     num_intersecting = 0
+    common_features = []
 
     # Should implement a binary search in O(N lg N) instead of O(N^2)
     for ffeature in found_features:
         for ofeature in openms_features:
             if ffeature == ofeature:
                 num_intersecting += 1
+                common_features.append(ffeature)
             elif abs(ffeature[0] - ofeature[0]) < rt_threshold and \
                  abs(ffeature[1] - ofeature[1]) < mz_threshold and \
                  abs(ffeature[2] - ofeature[2]) < intensity_threshold:
                 num_intersecting += 1
+                common_features.append(ffeature)
 
     print("found features:", len(found_features))
     print("openms features:", len(openms_features))
     print("intersecting features:", num_intersecting)
 
-    return num_intersecting
+    return common_features
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison.')
@@ -105,4 +109,5 @@ if __name__ == '__main__':
 
     ms.FeatureXMLFile().load(args.found + '.featureXML', found_features)
     
-    compare_features(found_features, openms_features)
+    common_features = compare_features(found_features, openms_features)
+    ms.FeatureXMLFile().store(args.out + 'common_features.featureXML', common_features)
