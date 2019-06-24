@@ -8,6 +8,9 @@ from operator import itemgetter
 
 from im_binning import run_ff
 
+# Globals
+clean_exp = ms.MSExperiment()
+
 def get_f_points(features):
     """Extracts the retention time, mass to charge, and intensity values of all data
     points in an experiment.
@@ -89,10 +92,17 @@ if __name__ == '__main__':
         ms.MzMLFile().load(args.source + '.mzML', exp)
         print('Done')
 
-        openms_features = run_ff(exp, 'centroided')
-    else:
-        ms.FeatureXMLFile.load(args.openms + '.mzML', openms_features)
+        # Remove MS2 scans
+        spectra = exp.getSpectra()
+        for i in range(len(spectra)):
+            spec = spectra[i]
+            if spec.getMSLevel() == 1:
+                clean_exp.addSpectrum(spec)
 
-    ms.FeatureXMLFile.load(args.found + '.mzML', found_features)
+        openms_features = run_ff(clean_exp, 'centroided')
+    else:
+        ms.FeatureXMLFile().load(args.openms + '.featureXML', openms_features)
+
+    ms.FeatureXMLFile().load(args.found + '.featureXML', found_features)
     
     compare_features(found_features, openms_features)
