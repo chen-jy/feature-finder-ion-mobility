@@ -268,6 +268,7 @@ def similar_features(feature1, feature2):
             abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold and
             abs(feature1.getIntensity() - feature2.getIntensity()) < intensity_threshold)
 
+# Need to check this function; features1 and 2 are lists of FeatureMaps()
 def match_features(features1, features2):
     if len(features1) == 1:
         return features1[0]
@@ -308,43 +309,46 @@ def find_features(outdir, outfile, ff_type='centroided'):
             centroided for peak-picked data.
     """
 
-    #pp = ms.PeakPickerHiRes()
+    pp = ms.PeakPickerHiRes()
     features = [[], []]
-    total_features = [[], []]
+    total_features = [ms.FeatureMap(), ms.FeatureMap()]
 
     for i in range(num_bins):
-        #new_exp = ms.MSExperiment()
-        #pp.pickExperiment(exps[i], new_exp)
+        new_exp = ms.MSExperiment()
+        pp.pickExperiment(exps[i], new_exp)
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) + '.mzML',
-                            exps[i])
+                            new_exp)
 
-        temp_features = run_ff(exps[i], ff_type)
+        temp_features = run_ff(new_exp, ff_type)
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                   '.featureXML', temp_features)
 
         features[0].append(temp_features)
-        total_features[0].extend(temp_features)
+        total_features[0] += temp_features
+
+    if num_bins == 1:
+        return
 
     # Second pass
     for i in range(num_bins + 1):
-        #new_exp = ms.MSExperiment()
-        #pp.pickExperiment(exps2[i], new_exp)
+        new_exp = ms.MSExperiment()
+        pp.pickExperiment(exps2[i], new_exp)
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) + '.mzML',
-                            exps2[i])
+                            new_exp)
 
-        temp_features = run_ff(exps2[i], ff_type)
+        temp_features = run_ff(new_exp, ff_type)
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                   '.featureXML', temp_features)
 
         features[1].append(temp_features)
-        total_features[1].extend(temp_features)
+        total_features[1] += temp_features
 
     # Combine features
-    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.mzML', total_features[0])
-    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.mzML', total_features[1])
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.featureXML', total_features[1])
 
-    matched_features = match_features(features[0], features[1])
-    ms.FeatureXMLFile().store(outdir + '/' + outfile + '.mzML', matched_features)
+    #matched_features = match_features(features[0], features[1])
+    #ms.FeatureXMLFile().store(outdir + '/' + outfile + '.mzML', matched_features)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder.')

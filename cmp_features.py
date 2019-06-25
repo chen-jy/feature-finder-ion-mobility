@@ -50,24 +50,29 @@ def compare_features(found_features_map, openms_features_map):
     found_features = sorted(f1, key=itemgetter(0, 1, 2))
     openms_features = sorted(f2, key=itemgetter(0, 1, 2))
 
-    rt_threshold = 0.01
-    mz_threshold = 0.01
-    intensity_threshold = 0.01
+    rt_threshold = 0.1
+    mz_threshold = 0.1
+    intensity_threshold = 0.1
 
     num_intersecting = 0
-    common_features = []
+    common_features = ms.FeatureMap()
 
     # Should implement a binary search in O(N lg N) instead of O(N^2)
     for ffeature in found_features:
         for ofeature in openms_features:
+            f = ms.Feature()
+            f.setRT(ffeature[0])
+            f.setMZ(ffeature[1])
+            f.setIntensity(ffeature[2])
+
             if ffeature == ofeature:
                 num_intersecting += 1
-                common_features.append(ffeature)
+                common_features.push_back(f)
             elif abs(ffeature[0] - ofeature[0]) < rt_threshold and \
                  abs(ffeature[1] - ofeature[1]) < mz_threshold and \
                  abs(ffeature[2] - ofeature[2]) < intensity_threshold:
                 num_intersecting += 1
-                common_features.append(ffeature)
+                common_features.push_back(f)
 
     print("found features:", len(found_features))
     print("openms features:", len(openms_features))
@@ -104,6 +109,7 @@ if __name__ == '__main__':
                 clean_exp.addSpectrum(spec)
 
         openms_features = run_ff(clean_exp, 'centroided')
+        ms.FeatureXMLFile().store('openms_features.featureXML', openms_features)
     else:
         ms.FeatureXMLFile().load(args.openms + '.featureXML', openms_features)
 
