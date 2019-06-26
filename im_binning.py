@@ -6,7 +6,7 @@ from operator import itemgetter
 # Globals and constants
 bins, exps = [], []
 first_im, last_im, delta_im = 0, 0, 0
-num_bins, bin_size = 10, 0
+num_bins, bin_size = 1, 0
 
 # For the second pass (shift the bins by 50%)
 bins2, exps2 = [], []
@@ -409,8 +409,15 @@ if __name__ == "__main__":
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
+    parser.add_argument('--num_bins', action='store', required=True, type=int)
+    parser.add_argument('--peak_pick', action='store', required=False)
 
     args = parser.parse_args()
+
+    num_bins = args.num_bins
+    peak_pick = False
+    if args.peak_pick is not None:
+        peak_pick = True
     
     exp = ms.MSExperiment()
     print('Loading mzML input file....................', end='', flush=True)
@@ -429,4 +436,4 @@ if __name__ == "__main__":
         print("Processing", spec.getMSLevel(), "RT", spec.getRT())
         bin_spectrum(spec, args.outdir, args.outfile)
 
-    find_features(args.outdir, args.outfile, 'centroided', False)
+    find_features(args.outdir, args.outfile, 'centroided', peak_pick)
