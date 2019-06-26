@@ -259,44 +259,79 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps2[i].addSpectrum(new_spec)
 
+def combine_features(exp1, exp2):
+    """Adds all of the spectra in <exp2> to <exp1>.
+
+    Args:
+        exp1 (MSExperiment): The OpenMS MSExperiment object to be added to.
+        exp2 (MSExperiment): The OpenMS MSExperiment object providing spectra.
+    """
+    spectra = exp2.getSpectra()
+    for spec in spectra:
+        exp1.addSpectrum(spec)
+
+# This probably doesn't work
 def similar_features(feature1, feature2):
-    rt_threshold = 0.1
-    mz_threshold = 0.1
-    intensity_threshold = 0.1
+    """Determines if two features are "similar"; i.e. both their RTs and MZs are within a
+    certain threshold of each other, respectively.
+
+    Args:
+        feature1 (Feature): An OpenMS Feature object.
+        feature2 (Feature): An OpenMS Feature object.
+
+    Returns:
+        bool: True iff feature1 and feature2 are similar.
+    """
+    rt_threshold = 5
+    mz_threshold = 0.01
 
     return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
-            abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold and
-            abs(feature1.getIntensity() - feature2.getIntensity()) < intensity_threshold)
+            abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
 
-# Need to check this function; features1 and 2 are lists of FeatureMaps()
+# Not finished implementing
 def match_features(features1, features2):
+    """Matches overlapping features from adjacent bins to each other.
+    
+    For example, in the first pass of binning, a feature may not be contained entirely
+    within its bin. Thus, it must be mapped to itself in an adjacent bin produced by the
+    second pass.
+
+    Args:
+        features1 (list<FeatureMap>): A list of OpenMS FeatureMap objects.
+        features2 (list<FeatureMap>): A list of OpenMS FeatureMap objects.
+
+    Returns:
+        FeatureMap: An OpenMS FeatureMap object containing all of the uniquely found
+            features.
+    """
     if len(features1) == 1:
         return features1[0]
     
-    features = []
+    features = ms.FeatureMap()
+
     for i in range(len(features1)):
-        for j in range(len(features1[i])):
-            f1 = features1[i][j]
-
-            for k in range(len(features2[i])):
-                f2 = features2[i][k]
-
+        for f1 in features1[i]:
+            for f2 in features2[i]:
                 if similar_features(f1, f2):
                     pass
-                elif f1 not in features:
-                    features.append(f1)
+                else:
+                    if not f1 in features:
+                        features.push_back(f1)
+                    if not f2 in features:
+                        features.push_back(f2)
 
-            for k in range(len(features2[i + 1])):
-                f2 = features2[i + 1][k]
-
+            for f2 in features2[i + 1]:
                 if similar_features(f1, f2):
                     pass
-                elif f1 not in features:
-                    features.append(f1)
+                else:
+                    if not f1 in features:
+                        features.push_back(f1)
+                    if not f2 in features:
+                        features.push_back(f2)
 
     return features
 
-def find_features(outdir, outfile, ff_type='centroided'):
+def find_features(outdir, outfile, ff_type='centroided', pick=False):
     """Runs an existing feature finder on the experiment bins and writes the features to
     files. Each bin (for each pass) gets its own mzML and featureXML files, each pass
     gets a combined featureXML file, and the overall experiment gets a matched featureXML
@@ -307,15 +342,23 @@ def find_features(outdir, outfile, ff_type='centroided'):
         outfile (string): The name of this experiment.
         ff_type (string): The name of the existing feature finder to use. Defaults to
             centroided for peak-picked data.
+        pick (boolean): Determines whether or not to pick peak the data before running
+            the feature finder.
     """
 
     pp = ms.PeakPickerHiRes()
+    total_exp = [ms.MSExperiment(), ms.MSExperiment()]
     features = [[], []]
     total_features = [ms.FeatureMap(), ms.FeatureMap()]
 
     for i in range(num_bins):
         new_exp = ms.MSExperiment()
-        pp.pickExperiment(exps[i], new_exp)
+
+        if pick:
+            pp.pickExperiment(exps[i], new_exp)
+        else:
+            new_exp = exps[i]
+
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) + '.mzML',
                             new_exp)
 
@@ -323,6 +366,7 @@ def find_features(outdir, outfile, ff_type='centroided'):
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                   '.featureXML', temp_features)
 
+        combine_features(total_exp[0], new_exp)
         features[0].append(temp_features)
         total_features[0] += temp_features
 
@@ -332,7 +376,12 @@ def find_features(outdir, outfile, ff_type='centroided'):
     # Second pass
     for i in range(num_bins + 1):
         new_exp = ms.MSExperiment()
-        pp.pickExperiment(exps2[i], new_exp)
+
+        if pick:
+            pp.pickExperiment(exps2[i], new_exp)
+        else:
+            new_exp = exps2[i]
+
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) + '.mzML',
                             new_exp)
 
@@ -340,8 +389,13 @@ def find_features(outdir, outfile, ff_type='centroided'):
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                   '.featureXML', temp_features)
 
+        combine_features(total_exp[1], new_exp)
         features[1].append(temp_features)
         total_features[1] += temp_features
+
+    # Combine spectra
+    ms.MzMLFile().store(outdir + '/' + outfile + '-pass1.mzML', total_exp[0])
+    ms.MzMLFile().store(outdir + '/' + outfile + '-pass2.mzML', total_exp[1])
 
     # Combine features
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
@@ -375,4 +429,4 @@ if __name__ == "__main__":
         print("Processing", spec.getMSLevel(), "RT", spec.getRT())
         bin_spectrum(spec, args.outdir, args.outfile)
 
-    find_features(args.outdir, args.outfile, 'centroided')
+    find_features(args.outdir, args.outfile, 'centroided', False)
