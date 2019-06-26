@@ -40,7 +40,7 @@ def compare_features(found_features_map, openms_features_map):
             features found by OpenMS.
 
     Returns:
-        list<Feature>: A list of features found in both feature maps (within a certain
+        FeatureMap: A list of features found in both feature maps (within a certain
             threshold).
     """
     f1 = get_f_points(found_features_map)
@@ -50,9 +50,8 @@ def compare_features(found_features_map, openms_features_map):
     found_features = sorted(f1, key=itemgetter(0, 1, 2))
     openms_features = sorted(f2, key=itemgetter(0, 1, 2))
 
-    rt_threshold = 0.1
-    mz_threshold = 0.1
-    intensity_threshold = 0.1
+    rt_threshold = 5
+    mz_threshold = 0.01
 
     num_intersecting = 0
     common_features = ms.FeatureMap()
@@ -69,8 +68,7 @@ def compare_features(found_features_map, openms_features_map):
                 num_intersecting += 1
                 common_features.push_back(f)
             elif abs(ffeature[0] - ofeature[0]) < rt_threshold and \
-                 abs(ffeature[1] - ofeature[1]) < mz_threshold and \
-                 abs(ffeature[2] - ofeature[2]) < intensity_threshold:
+                 abs(ffeature[1] - ofeature[1]) < mz_threshold:
                 num_intersecting += 1
                 common_features.push_back(f)
 
