@@ -29,7 +29,7 @@ def get_f_points(features):
 
     return data_points
 
-def compare_features(found_features_map, openms_features_map):
+def compare_features(found_features_map, openms_features_map, baseline_features_map):
     """Compares two sets of features (namely, those found by the new feature finder and
     those found by OpenMS), and finds the number of intersecting features.
 
@@ -38,23 +38,27 @@ def compare_features(found_features_map, openms_features_map):
             found by the new feature finder.
         openms_features_map (FeatureMap): An OpenMS FeatureMap object containing
             features found by OpenMS.
+        baseline_features_map (FeatureMap): An OpenMS FeatureMap object containing
+            features found by the baseline (baseline.py).
 
     Returns:
-        FeatureMap: A list of features found in both feature maps (within a certain
+        FeatureMap: A list of features found in all feature maps (within a certain
             threshold).
     """
     f1 = get_f_points(found_features_map)
     f2 = get_f_points(openms_features_map)
+    f3 = get_f_points(baseline_features_map)
 
     # Sorting for easier comparisons
     found_features = sorted(f1, key=itemgetter(0, 1, 2))
     openms_features = sorted(f2, key=itemgetter(0, 1, 2))
+    baseline_features = sorted(f3, key=itemgetter(0, 1, 2))
 
     rt_threshold = 5
     mz_threshold = 0.01
 
-    num_intersecting = 0
-    common_features = ms.FeatureMap()
+    num_12_intersecting = 0
+    common_12_features = ms.FeatureMap()
 
     # Should implement a binary search in O(N lg N) instead of O(N^2)
     for ffeature in found_features:
@@ -64,16 +68,29 @@ def compare_features(found_features_map, openms_features_map):
             f.setMZ(ffeature[1])
             f.setIntensity(ffeature[2])
 
-            if ffeature == ofeature:
-                num_intersecting += 1
-                common_features.push_back(f)
-            elif abs(ffeature[0] - ofeature[0]) < rt_threshold and \
-                 abs(ffeature[1] - ofeature[1]) < mz_threshold:
+            if ffeature == ofeature or (abs(ffeature[0] - ofeature[0]) < rt_threshold and
+                                        abs(ffeature[1] - ofeature[1]) < mz_threshold):
+                num_12_intersecting += 1
+                common_12_features.push_back(f)
+
+    num_intersecting = 0
+    common_features = ms.FeatureMap()
+
+    for cfeature in common_12_features:
+        for bfeature in baseline_features:
+            f = ms.Feature()
+            f.setRT(cfeature.getRT())
+            f.setMZ(cfeature.getMZ())
+            f.setIntensity(cfeature.getIntensity())
+
+            if cfeature == bfeature or (abs(cfeature.getRT() - bfeature[0]) < rt_threshold and
+                                        abs(cfeature.getMZ() - bfeature[1]) < mz_threshold):
                 num_intersecting += 1
                 common_features.push_back(f)
 
     print("found features:", len(found_features))
     print("openms features:", len(openms_features))
+    print("baseline features:", len(baseline_features))
     print("intersecting features:", num_intersecting)
 
     return common_features
@@ -83,10 +100,12 @@ if __name__ == '__main__':
     parser.add_argument('--found', action='store', required=True, type=str)
     parser.add_argument('--openms', action='store', required=False, type=str)
     parser.add_argument('--source', action='store', required=False, type=str)
+    parser.add_argument('--baseline', action='store', required=True, type=str)
     parser.add_argument('--out', action='store', required=True, type=str)
 
     args = parser.parse_args()
-    found_features, openms_features = ms.FeatureMap(), ms.FeatureMap()
+    found_features, openms_features, baseline_features = ms.FeatureMap(), \
+        ms.FeatureMap(), ms.FeatureMap()
 
     # No OpenMS features are provided; run the feature finder on the raw data first
     if args.openms is None:
@@ -112,6 +131,7 @@ if __name__ == '__main__':
         ms.FeatureXMLFile().load(args.openms + '.featureXML', openms_features)
 
     ms.FeatureXMLFile().load(args.found + '.featureXML', found_features)
+    ms.FeatureXMLFile().load(args.baseline + '.featureXML', baseline_features)
     
-    common_features = compare_features(found_features, openms_features)
-    ms.FeatureXMLFile().store(args.out + 'common_features.featureXML', common_features)
+    common_features = compare_features(found_features, openms_features, baseline_features)
+    ms.FeatureXMLFile().store(args.out + '-common_features.featureXML', common_features)

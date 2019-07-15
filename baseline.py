@@ -497,8 +497,9 @@ def compare_baseline_to_openms(
     # return shared_pairs_to_counts
     return
 
-def driver(args, find_features=True):
-    if find_features == True:
+def driver(args):
+    # mode: 0 = do everything; 1 = only find features; 2 = only do linking
+    if mode != 2:
         exp = ms.MSExperiment()
         ms.MzMLFile().load(args.infile + '.mzML', exp)
 
@@ -506,7 +507,10 @@ def driver(args, find_features=True):
         start_idx = 0
         spectra = exp.getSpectra()
 
+        total_features = ms.FeatureMap()
+
         for i in range(start_idx, start_idx + args.num_frames):
+            print("Processing frame", i, "of", args.num_frames)
             spec = spectra[i]
 
             new_exp = four_d_spectrum_to_experiment(spec)
@@ -515,12 +519,18 @@ def driver(args, find_features=True):
 
             new_features = run_feature_finder_centroided_on_experiment(new_exp)
             ms.FeatureXMLFile().store(args.outdir + '/' + str(i) + '_' + args.outfile +
-                                      '.featureXML', new_features)
+                                        '.featureXML', new_features)
 
+            total_features += new_features
             counter_to_og_rt_ms[i] = [spec.getRT(), spec.getMSLevel()]
 
         with open(args.outdir + '/counter_to_og_rt_ms.pkl', 'wb') as handle:
             pickle.dump(counter_to_og_rt_ms, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        ms.FeatureXMLFile().store(args.outdir + '/' + 'baseline.featureXML',
+                                    total_features)
+        if mode == 1:
+            return
 
     #####################################################################################
 
@@ -594,6 +604,7 @@ if __name__ == "__main__":
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
+    parser.add_argument('--mode', action='store', required=True, type=int)
     parser.add_argument('--mz_epsilon', action='store', required=False, type=float)
     parser.add_argument('--im_epsilon', action='store', required=False, type=float)
     parser.add_argument('--num_frames', action='store', required=False, type=int)
@@ -601,5 +612,4 @@ if __name__ == "__main__":
     parser.add_argument('--rt_length', action='store', required=False, type=int)
 
     args = parser.parse_args()
-
     driver(args)
