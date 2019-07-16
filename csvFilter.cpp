@@ -13,8 +13,15 @@ int main(int argc, char *argv[]) {
 	cin.sync_with_stdio(0);
 	cin.tie(0);
 
-	if (argc < 2) {
-		cout << "Usage: csvFilter <csv filename>\n";
+	// Temporary arg processing until Win 10 gets its full Linux kernel
+	if (argc < 3) {
+		cout << "Usage: csvFilter <csv filename> <mode (0 or 1)>\n";
+		exit(1);
+	}
+
+	int mode = atoi(argv[2]);
+	if (mode != 0 && mode != 1) {
+		cout << "Error: mode must be 0 (q filtering) or 1 (rt/mz/int filtering)\n";
 		exit(1);
 	}
 
@@ -47,14 +54,25 @@ int main(int argc, char *argv[]) {
 
 	// Target column indices
 	int idx_rt = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "RT"));
+	int idx_mz = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "m/z"));
+	int idx_int = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "Intensity"));
 	int idx_q = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "initialPeakQuality"));
 
 	for (i = 1; i < table.size(); i++) {
 		double rt = atof(table[i][idx_rt].c_str());
+		double mz = atof(table[i][idx_mz].c_str());
+		double intensity = atof(table[i][idx_int].c_str());
 		double q = atof(table[i][idx_q].c_str());
 
-		if (3001 <= rt && rt <= 3098 && q >= 0.01) {
+		if (mode == 0 && 3001 <= rt && rt <= 3098 && q >= 0.01) {
 			filtered.push_back(table[i]);
+		}
+		else if (mode == 1) {
+			vector<string> row;
+			row.push_back(to_string(rt));
+			row.push_back(to_string(mz));
+			row.push_back(to_string(intensity));
+			filtered.push_back(row);
 		}
 	}
 
@@ -63,12 +81,17 @@ int main(int argc, char *argv[]) {
 	// Write results out to a new csv file
 	freopen("filtered.csv", "w", stdout);
 
-	for (i = 0; i < table[0].size(); i++) {
-		cout << table[0][i];
-		if (i < table[0].size() - 1)
-			cout << ",";
+	if (mode == 0) {
+		for (i = 0; i < table[0].size(); i++) {
+			cout << table[0][i];
+			if (i < table[0].size() - 1)
+				cout << ",";
+		}
+		cout << "\n";
 	}
-	cout << "\n";
+	else if (mode == 1) {
+		cout << "RT,m/z,Intensity\n";
+	}
 
 	for (i = 0; i < filtered.size(); i++) {
 		for (int j = 0; j < filtered[i].size(); j++) {
