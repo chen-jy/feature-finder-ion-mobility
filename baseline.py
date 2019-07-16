@@ -499,7 +499,7 @@ def compare_baseline_to_openms(
 
 def driver(args):
     # mode: 0 = do everything; 1 = only find features; 2 = only do linking
-    if mode != 2:
+    if args.mode != 2:
         exp = ms.MSExperiment()
         ms.MzMLFile().load(args.infile + '.mzML', exp)
 
@@ -529,7 +529,7 @@ def driver(args):
 
         ms.FeatureXMLFile().store(args.outdir + '/' + 'baseline.featureXML',
                                     total_features)
-        if mode == 1:
+        if args.mode == 1:
             return
 
     #####################################################################################
