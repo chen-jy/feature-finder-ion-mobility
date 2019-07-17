@@ -6,7 +6,7 @@ from operator import itemgetter
 # Globals and constants
 bins, exps = [], []
 first_im, last_im, delta_im = 0, 0, 0
-num_bins, bin_size = 1, 0
+num_bins, bin_size = 0, 0
 
 # For the second pass (shift the bins by 50%)
 bins2, exps2 = [], []
@@ -127,7 +127,7 @@ def run_ff(exp, type):
     features.setUniqueIds()
     return features
 
-def bin_spectrum(spec, outdir, outfile):
+def bin_spectrum(spec):
     """Makes a single pass at binning a single spectrum. Needs to eventually support
     an overlapping series of bins (multiple passes).
 
@@ -135,8 +135,6 @@ def bin_spectrum(spec, outdir, outfile):
 
     Args:
         spec (MSSpectrum): An OpenMS MSSpectrum object.
-        outdir (string): The output directory for writing FeatureXML files.
-        outfile (string): An identifier for this series of runs.
     """
     global bins, exps
     global bins2, exps2
@@ -259,7 +257,7 @@ def bin_spectrum(spec, outdir, outfile):
 
         exps2[i].addSpectrum(new_spec)
 
-def combine_features(exp1, exp2):
+def combine_spectra(exp1, exp2):
     """Adds all of the spectra in <exp2> to <exp1>.
 
     Args:
@@ -288,6 +286,34 @@ def similar_features(feature1, feature2):
     return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
             abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
 
+def hull_area(hull):
+    """Calculates the area of a convex hull (as a polygon) using the shoelace formula.
+
+    Args:
+        hull (libcpp_vector[DPosition2]): A list of OpenMS DPosition<2> objects.
+
+    Returns:
+        float: The area of the convex hull.
+    """
+    area = 0.0
+    for i in range(len(hull)):
+        area += hull[i][0] * hull[(i + 1) % len(hull)][1]
+        area -= hull[i][1] * hull[(i + 1) % len(hull)][0]
+    return abs(area) / 2
+
+def bb_area(box):
+    """Calculates the area of a convex hull's bounding box.
+
+    Args:
+        box (DBoundingBox2): An OpenMS DBoundingBox<2> object.
+
+    Returns:
+        float: The area of the bounding box.
+    """
+    _min = box.minPosition()
+    _max = box.maxPosition()
+    return abs(_min[0] - _max[0]) * abs(_min[1] * _max[1])
+
 # Not finished implementing
 def match_features(features1, features2):
     """Matches overlapping features from adjacent bins to each other.
@@ -304,6 +330,7 @@ def match_features(features1, features2):
         FeatureMap: An OpenMS FeatureMap object containing all of the uniquely found
             features.
     """
+    # One bin was used, so there's no need to match anything
     if len(features1) == 1:
         return features1[0]
     
@@ -311,23 +338,30 @@ def match_features(features1, features2):
 
     for i in range(len(features1)):
         for f1 in features1[i]:
+            max_area = hull_area(f1.getConvexHull().getHullPoints())
+            max_feature = f1
+
+            # Should test to see if this gets rid of satellite features
             for f2 in features2[i]:
                 if similar_features(f1, f2):
-                    pass
-                else:
-                    if not f1 in features:
-                        features.push_back(f1)
-                    if not f2 in features:
-                        features.push_back(f2)
+                    hp = f2.getConvexHull().getHullPoints()
+                    if hp > max_area:
+                        max_area = hp
+                        max_feature = f2
+
+            features.push_back(max_feature)
+
+            max_area = hull_area(f1.getConvexHull().getHullPoints())
+            max_feature = f1
 
             for f2 in features2[i + 1]:
                 if similar_features(f1, f2):
-                    pass
-                else:
-                    if not f1 in features:
-                        features.push_back(f1)
-                    if not f2 in features:
-                        features.push_back(f2)
+                    hp = f2.getConvexHull().getHullPoints()
+                    if hp > max_area:
+                        max_area = hp
+                        max_feature = f2
+
+            features.push_back(max_feature)
 
     return features
 
@@ -366,7 +400,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                   '.featureXML', temp_features)
 
-        combine_features(total_exp[0], new_exp)
+        combine_spectra(total_exp[0], new_exp)
         features[0].append(temp_features)
         total_features[0] += temp_features
 
@@ -389,7 +423,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                   '.featureXML', temp_features)
 
-        combine_features(total_exp[1], new_exp)
+        combine_spectra(total_exp[1], new_exp)
         features[1].append(temp_features)
         total_features[1] += temp_features
 
@@ -434,6 +468,6 @@ if __name__ == "__main__":
             continue
 
         print("Processing", spec.getMSLevel(), "RT", spec.getRT())
-        bin_spectrum(spec, args.outdir, args.outfile)
+        bin_spectrum(spec)
 
     find_features(args.outdir, args.outfile, 'centroided', peak_pick)
