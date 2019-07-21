@@ -3,10 +3,8 @@ import argparse
 import pyopenms as ms
 import numpy as np
 
-import time
 from operator import itemgetter
-
-from im_binning import run_ff
+from im_binning import run_ff, similar_features
 
 # Globals
 clean_exp = ms.MSExperiment()
@@ -16,7 +14,7 @@ def get_f_points(features):
     points in an experiment.
 
     Args:
-        features (MSExperiment): An OpenMS MSExperiment object.
+        features (MSExperiment): An OpenMS experiment.
 
     Returns:
         list<list<float, float, float>>: A list of lists, where each interior list
@@ -30,10 +28,10 @@ def get_f_points(features):
     return data_points
 
 # Need to rewrite this to be far more efficient
-def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
+@DeprecationWarning
+def compare_features_old(found_fm, openms_fm, baseline_fm, truth_fm):
     """Compares two sets of features (namely, those found by the new feature finder and
     those found by OpenMS), and finds the number of intersecting features.
-
     Args:
         found_fm (FeatureMap): An OpenMS FeatureMap object containing feaatures found by
             the new feature finder.
@@ -43,7 +41,6 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
             by the baseline (baseline.py).
         truth_fm (FeatureMap): An OpenMS FeatureMap object containing features extracted
             from the data's corresponding tsv (csv) file.
-
     Returns:
         FeatureMap: A list of features found in all feature maps (within a certain
             threshold).
@@ -128,6 +125,76 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
     # Total WC runtime: O(N + N lg N + N^2) => O(N(lg N + N))
     return common_features
 
+def compare_features_slow(found_fm, openms_fm, baseline_fm, truth_fm):
+    # Need to play around with these
+    rt_threshold = 5
+    mz_threshold = 0.01
+
+    # Compare new feature finder to existing
+    common_new = 0
+    for ffeature in found_fm:
+        for ofeature in openms_fm:
+            if similar_features(ffeature, ofeature):
+                common_new += 1
+
+    # Compare Leon's feature finder to existing
+    common_base = 0
+    for bfeature in baseline_fm:
+        for ofeature in openms_fm:
+            if similar_features(bfeature, ofeature):
+                common_base += 1
+
+    # Compare new feature finder to real features
+    common_newtruth = 0
+    for ffeature in found_fm:
+        for tfeature in truth_fm:
+            if similar_features(ffeature, tfeature):
+                common_newtruth += 1
+
+    # Compare Leon's feature finder to real features
+    common_basetruth = 0
+    for bfeature in baseline_fm:
+        for tfeature in truth_fm:
+            if similar_features(bfeature, tfeature):
+                common_basetruth += 1
+
+    # Control: compare OpenMS feature finder to real features
+    common_control = 0
+    for ofeature in openms_fm:
+        for tfeature in truth_fm:
+            if similar_features(ofeature, tfeature):
+                common_control += 1
+
+    # Check if any features are found by all feature finders
+    common_features = 0
+    common = ms.FeatureMap()
+
+    for ffeature in found_fm:
+        for ofeature in openms_fm:
+            if not similar_features(ffeature, ofeature):
+                continue
+
+            for bfeature in baseline_fm:
+                if not similar_features(ffeature, bfeature):
+                    continue
+
+                for tfeature in truth_fm:
+                    if not similar_features(ffeature, tfeature):
+                        continue
+
+                common_features += 1
+                # Maybe choose the greater convex hull as in im_binning?
+                common.push_back(ffeature)
+
+    print("Found    - OpenMS:  ", common_new.size())
+    print("Baseline - OpenMS:  ", common_base.size())
+    print("Found    - tsv:     ", common_newtruth.size())
+    print("Baseline - tsv:     ", common_basetruth.size())
+    print("OpenMS   - tsv:     ", common_control.size())
+    print("All common:         ", common_features)
+
+    return common
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison.')
     parser.add_argument('--found', action='store', required=True, type=str)
@@ -168,6 +235,6 @@ if __name__ == '__main__':
     ms.FeatureXMLFile().load(args.baseline + '.featureXML', baseline_features)
     ms.FeatureXMLFile().load(args.truth + '.featureXML', truth_features)
     
-    common_features = compare_features(found_features, openms_features,
+    common_features = compare_features_slow(found_features, openms_features,
                                        baseline_features, truth_features)
     ms.FeatureXMLFile().store(args.out + '-common_features.featureXML', common_features)
