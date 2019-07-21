@@ -1,6 +1,8 @@
-from baseline import *
+import argparse
 
-import time
+import pyopenms as ms
+import numpy as np
+
 from operator import itemgetter
 
 # Globals and constants
@@ -17,7 +19,7 @@ def get_points(spec):
     and ion mobility for each peak in a spectrum.
 
     Args:
-        spec (MSSpectrum): An OpenMS MSSpectrum object.
+        spec (MSSpectrum): The OpenMS spectrum to extract data from.
 
     Returns:
         list<list<float, float, float, float>>: A list of lists, where each interior
@@ -28,18 +30,8 @@ def get_points(spec):
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
 
 def get_points_pp(spec_pp, spec):
-    """Does the same thing as get_points(), but for a spectrum that has been peak-
-    picked (losing its IM information in the process).
-
-    Args:
-        spec_pp (MSSpectrum): An OpenMS MSSpectrum object that has been peak-picked.
-        spec (MSSpectrum): An OpenMS MSSpectrum object, not peak-picked, corresponding
-            to spec_pp.
-
-    Returns:
-        list<list<float, float, float, float>>: A list of lists, where each interior
-        list holds RT, MZ, intensity, and IM information (in that order) for a single
-        peak in the spectrum. The exterior list is unsorted.
+    """Does the same thing as get_points(), but for a spectrum that has been peak-picked
+    (and no longer has IM information). The two spectra must correspond to one another.
     """
     point_data = zip(*spec_pp.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
@@ -48,7 +40,7 @@ def get_extrema(spectra):
     """Finds the smallest and largest IM values in an experiment.
 
     Args:
-        spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
+        spectra (list<MSSpectrum>): A list of OpenMS spectra.
 
     Returns:
         tuple<float, float>: The smallest and largest IM values in the experiment.
@@ -68,18 +60,16 @@ def get_extrema(spectra):
     return smallest_im, largest_im
 
 def setup_bins(spectra):
-    """Sets up the global bins using the smallest and greatest ion mobility values.
+    """Sets up the global bins using the smallest and largest ion mobility values.
 
     Args:
-        spectra (list<MSSpectrum>): A list of OpenMS MSSpectrum objects.
+        spectra (list<MSSpectrum>): A list of OpenMS spectra.
     """
     global first_im, last_im, delta_im, bin_size, bins, exps
     global offset_im, bins2, exps2
 
     print('Getting binning bounds.....................', end='', flush=True)
     first_im, last_im = get_extrema(spectra)
-    # Approximation for debugging
-    #first_im, last_im = 0.5, 1.7
     print('Done')
 
     delta_im = last_im - first_im
@@ -102,11 +92,11 @@ def run_ff(exp, type):
     """Runs a feature finder on the given input map.
 
     Args:
-        exp (MSExperiment): An OpenMS MSExperiment object.
+        exp (MSExperiment): The OpenMS experiment to run the feature finder on.
         type (string): The name of the feature finder to run.
 
     Returns:
-        FeatureMap: Contains the found features from the given experiment.
+        FeatureMap: (OpenMS) Contains the found features from the given experiment.
     """
     ff = ms.FeatureFinder()
     ff.setLogType(ms.LogType.CMD)
@@ -128,21 +118,16 @@ def run_ff(exp, type):
     return features
 
 def bin_spectrum(spec):
-    """Makes a single pass at binning a single spectrum. Needs to eventually support
-    an overlapping series of bins (multiple passes).
+    """Makes two passes at binning a single spectrum (with the second pass shifting the
+    bins by 50%).
 
-    Results are saved in the global array <bins>.
+    Results are saved in the global arrays.
 
     Args:
-        spec (MSSpectrum): An OpenMS MSSpectrum object.
+        spec (MSSpectrum): The OpenMS spectrum to bin.
     """
     global bins, exps
     global bins2, exps2
-
-    #pp = ms.PeakPickerHiRes()
-    #spec_pp = ms.MSSpectrum()
-    #pp.pick(spec, spec_pp)
-    #points = get_points_pp(spec_pp, spec)
 
     points = get_points(spec)
     # Sort points by IM ascending
@@ -202,7 +187,7 @@ def bin_spectrum(spec):
 
         bins[i].extend(temp_bins[i])
 
-        # Step 2.5: build and add a new spectrum
+        # Build and add a new spectrum
         transpose = list(zip(*temp_bins[i]))
 
         new_spec = ms.MSSpectrum()
@@ -243,7 +228,7 @@ def bin_spectrum(spec):
 
         bins2[i].extend(temp_bins2[i])
 
-        # Step 3.5: build and add a new spectrum
+        # Build and add a new spectrum
         transpose = list(zip(*temp_bins2[i]))
 
         new_spec = ms.MSSpectrum()
@@ -261,21 +246,21 @@ def combine_spectra(exp1, exp2):
     """Adds all of the spectra in <exp2> to <exp1>.
 
     Args:
-        exp1 (MSExperiment): The OpenMS MSExperiment object to be added to.
-        exp2 (MSExperiment): The OpenMS MSExperiment object providing spectra.
+        exp1 (MSExperiment): The OpenMS experiment to be added to.
+        exp2 (MSExperiment): The OpenMS experiment providing spectra.
     """
     spectra = exp2.getSpectra()
     for spec in spectra:
         exp1.addSpectrum(spec)
 
-# This probably doesn't work
+# Is there a better way to do this?
 def similar_features(feature1, feature2):
-    """Determines if two features are "similar"; i.e. both their RTs and MZs are within a
-    certain threshold of each other, respectively.
+    """Determines if two features are "similar"; i.e. both their RTs and M/Zs are within a
+    certain threshold of each other.
 
     Args:
-        feature1 (Feature): An OpenMS Feature object.
-        feature2 (Feature): An OpenMS Feature object.
+        feature1 (Feature): An OpenMS feature.
+        feature2 (Feature): An OpenMS feature.
 
     Returns:
         bool: True iff feature1 and feature2 are similar.
@@ -290,7 +275,7 @@ def hull_area(hull):
     """Calculates the area of a convex hull (as a polygon) using the shoelace formula.
 
     Args:
-        hull (libcpp_vector[DPosition2]): A list of OpenMS DPosition<2> objects.
+        hull (libcpp_vector[DPosition2]): A list of points of the convex hull.
 
     Returns:
         float: The area of the convex hull.
@@ -299,13 +284,13 @@ def hull_area(hull):
     for i in range(len(hull)):
         area += hull[i][0] * hull[(i + 1) % len(hull)][1]
         area -= hull[i][1] * hull[(i + 1) % len(hull)][0]
-    return abs(area) / 2
+    return abs(area) / 2.0
 
 def bb_area(box):
     """Calculates the area of a convex hull's bounding box.
 
     Args:
-        box (DBoundingBox2): An OpenMS DBoundingBox<2> object.
+        box (DBoundingBox2): An OpenMS bounding box for a convex hull.
 
     Returns:
         float: The area of the bounding box.
@@ -314,7 +299,6 @@ def bb_area(box):
     _max = box.maxPosition()
     return abs(_min[0] - _max[0]) * abs(_min[1] * _max[1])
 
-# Not finished implementing
 def match_features(features1, features2):
     """Matches overlapping features from adjacent bins to each other.
     
@@ -323,12 +307,11 @@ def match_features(features1, features2):
     second pass.
 
     Args:
-        features1 (list<FeatureMap>): A list of OpenMS FeatureMap objects.
-        features2 (list<FeatureMap>): A list of OpenMS FeatureMap objects.
+        features1 (list<FeatureMap>): A list of OpenMS feature maps from the first pass.
+        features2 (list<FeatureMap>): A list of OpenMS feature maps from the second pass.
 
     Returns:
-        FeatureMap: An OpenMS FeatureMap object containing all of the uniquely found
-            features.
+        FeatureMap: An OpenMS feature map containing all of the uniquely found features.
     """
     # One bin was used, so there's no need to match anything
     if len(features1) == 1:
@@ -345,7 +328,7 @@ def match_features(features1, features2):
             for f2 in features2[i]:
                 if similar_features(f1, f2):
                     hp = f2.getConvexHull().getHullPoints()
-                    if hp > max_area:
+                    if hull_area(hp) > max_area:
                         max_area = hp
                         max_feature = f2
 
@@ -357,7 +340,7 @@ def match_features(features1, features2):
             for f2 in features2[i + 1]:
                 if similar_features(f1, f2):
                     hp = f2.getConvexHull().getHullPoints()
-                    if hp > max_area:
+                    if hull_area(hp) > max_area:
                         max_area = hp
                         max_feature = f2
 
@@ -366,16 +349,15 @@ def match_features(features1, features2):
     return features
 
 def find_features(outdir, outfile, ff_type='centroided', pick=False):
-    """Runs an existing feature finder on the experiment bins and writes the features to
-    files. Each bin (for each pass) gets its own mzML and featureXML files, each pass
-    gets a combined featureXML file, and the overall experiment gets a matched featureXML
-    file (from both passes).
+    """Runs an existing OpenMS feature finder on each of the experiment bins and writes
+    the found features to files. Each bin (for each pass) gets its own featureXML and
+    mzML files, each pass gets combined files, and the overall experiment gets a matched
+    featureXML file from both passes.
 
     Args:
-        outdir (string): The targeted output directory. It must already exist.
+        outdir (string): The directory to write files to. It must already exist.
         outfile (string): The name of this experiment.
-        ff_type (string): The name of the existing feature finder to use. Defaults to
-            centroided for peak-picked data.
+        ff_type (string): The name of the OpenMS feature finder to use.
         pick (boolean): Determines whether or not to pick peak the data before running
             the feature finder.
     """
@@ -435,8 +417,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.featureXML', total_features[1])
 
-    #matched_features = match_features(features[0], features[1])
-    #ms.FeatureXMLFile().store(outdir + '/' + outfile + '.mzML', matched_features)
+    matched_features = match_features(features[0], features[1])
+    ms.FeatureXMLFile().store(outdir + '/' + outfile + '.featureXML', matched_features)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='4D LC-IMS/MS Feature Finder.')
@@ -467,7 +449,8 @@ if __name__ == "__main__":
         if (spec.getMSLevel() != 1):
             continue
 
-        print("Processing", spec.getMSLevel(), "RT", spec.getRT())
+        print('Processing MS', end='')
+        print(spec.getMSLevel(), 'RT', spec.getRT())
         bin_spectrum(spec)
 
     find_features(args.outdir, args.outfile, 'centroided', peak_pick)
