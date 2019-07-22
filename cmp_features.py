@@ -4,6 +4,7 @@ import pyopenms as ms
 import numpy as np
 
 from operator import itemgetter
+from math import floor
 from im_binning import run_ff, similar_features
 
 # Globals
@@ -26,6 +27,36 @@ def get_f_points(features):
         data_points.append([feature.getRT(), feature.getMZ(), feature.getIntensity()])
 
     return data_points
+
+def get_fs_points(features, key):
+    """Does the same thing as get_f_points(), but also sorts the data according to the
+    key.
+    """
+    data_points = get_f_points(features)
+    return sorted(data_points, key)
+
+def binary_search_leftmost(arr, idx, target):
+    """Binary search a single column (idx) in a 2D array.
+
+    <arr> must be sorted in <idx>.
+
+    Args:
+        arr (list<list<float>>): The 2D array to be searched.
+        idx (int): The index of the column of the array to be searched.
+        target (float): The target number to be searched for.
+
+    Returns:
+        int: The index of the leftmost element equal to the target, if it exists.
+            Otherwise, the number of elements less than the target is returned.
+    """
+    l, r = 0, len(arr)
+    while l < r:
+        m = floor((l + r) / 2)
+        if arr[idx][m] < target:
+            l = m + 1
+        else:
+            r = m
+    return l
 
 # Need to rewrite this to be far more efficient
 #@DeprecationWarning
@@ -118,8 +149,8 @@ def compare_features_old(found_fm, openms_fm, baseline_fm, truth_fm):
     print("baseline features:      ", len(baseline_features))
     print("truth features:         ", len(truth_features))
 
-    print("# of fo intersecting:   ", len(common_12_features))
-    print("# of fob intersecting:  ", len(common_123_features))
+    print("# of fo intersecting:   ", common_12_features.size())
+    print("# of fob intersecting:  ", common_123_features.size())
     print("total intersecting:     ", num_intersecting)
 
     # Total WC runtime: O(N + N lg N + N^2) => O(N(lg N + N))
@@ -197,11 +228,11 @@ def compare_features_slow(found_fm, openms_fm, baseline_fm, truth_fm):
     #            # Maybe choose the greater convex hull as in im_binning?
     #            common.push_back(ffeature)
 
-    print("Found    - OpenMS:  ", common_new.size())
-    print("Baseline - OpenMS:  ", common_base.size())
-    print("Found    - tsv:     ", common_newtruth.size())
-    print("Baseline - tsv:     ", common_basetruth.size())
-    print("OpenMS   - tsv:     ", common_control.size())
+    print("Found    - OpenMS:  ", common_new)
+    print("Baseline - OpenMS:  ", common_base)
+    print("Found    - tsv:     ", common_newtruth)
+    print("Baseline - tsv:     ", common_basetruth)
+    print("OpenMS   - tsv:     ", common_control)
     print("All common:         ", common_features)
 
     return common
@@ -247,6 +278,6 @@ if __name__ == '__main__':
     ms.FeatureXMLFile().load(args.truth + '.featureXML', truth_features)
     
     print('Features loaded, beginning comparison')
-    common_features = compare_features_old(found_features, openms_features,
+    common_features = compare_features_slow(found_features, openms_features,
                                        baseline_features, truth_features)
     ms.FeatureXMLFile().store(args.outdir + '/common.featureXML', common_features)

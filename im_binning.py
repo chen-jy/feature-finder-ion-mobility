@@ -259,8 +259,10 @@ def similar_features(feature1, feature2):
     certain threshold of each other.
 
     Args:
-        feature1 (Feature): An OpenMS feature.
-        feature2 (Feature): An OpenMS feature.
+        feature1 (Feature or list<float>): An OpenMS feature or a list of floats
+            representing a feature.
+        feature2 (Feature or list<float>): An OpenMS feature or a list of floats
+            representing a feature.
 
     Returns:
         bool: True iff feature1 and feature2 are similar.
@@ -268,8 +270,14 @@ def similar_features(feature1, feature2):
     rt_threshold = 5
     mz_threshold = 0.01
 
-    return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
-            abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
+    if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
+        return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
+                abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
+    elif isinstance(feature1, list) and isinstance(feature2, list):
+        return (abs(feature1[0] - feature2[0]) < rt_threshold and
+                abs(feature1[1] - feature2[1]) < mz_threshold)
+    else:
+        return False
 
 def hull_area(hull):
     """Calculates the area of a convex hull (as a polygon) using the shoelace formula.
