@@ -329,7 +329,7 @@ def match_features(features1, features2):
                 if similar_features(f1, f2):
                     hp = f2.getConvexHull().getHullPoints()
                     if hull_area(hp) > max_area:
-                        max_area = hp
+                        max_area = hull_area(hp)
                         max_feature = f2
 
             features.push_back(max_feature)
@@ -341,7 +341,7 @@ def match_features(features1, features2):
                 if similar_features(f1, f2):
                     hp = f2.getConvexHull().getHullPoints()
                     if hull_area(hp) > max_area:
-                        max_area = hp
+                        max_area = hull_area(hp)
                         max_feature = f2
 
             features.push_back(max_feature)
@@ -379,6 +379,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
                             new_exp)
 
         temp_features = run_ff(new_exp, ff_type)
+        temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                   '.featureXML', temp_features)
 
@@ -402,6 +403,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
                             new_exp)
 
         temp_features = run_ff(new_exp, ff_type)
+        temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                   '.featureXML', temp_features)
 
@@ -414,10 +416,13 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
     ms.MzMLFile().store(outdir + '/' + outfile + '-pass2.mzML', total_exp[1])
 
     # Combine features
+    total_features[0].setUniqueIds()
+    total_features[1].setUniqueIds()
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.featureXML', total_features[1])
 
     matched_features = match_features(features[0], features[1])
+    matched_features.setUniqueIds()
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '.featureXML', matched_features)
 
 if __name__ == "__main__":

@@ -509,8 +509,8 @@ def driver(args):
 
         total_features = ms.FeatureMap()
 
-        for i in range(start_idx, start_idx + args.num_frames):
-            print("Processing frame", i, "of", args.num_frames)
+        for i in range(start_idx, start_idx + exp.getNrSpectra()):
+            print("Processing frame", i, "of", exp.getNrSpectra())
             spec = spectra[i]
 
             new_exp = four_d_spectrum_to_experiment(spec)

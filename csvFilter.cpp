@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 		i++;
 	}
 
-	cout << "Rows: " << table.size() << "\n";
+	//cout << "Rows: " << table.size() << "\n";
 
 	// Target column indices
 	int idx_rt = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "RT"));
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	cout << "Results: " << filtered.size() << "\n";
+	//cout << "Results: " << filtered.size() << "\n";
 
 	// Write results out to a new csv file
 	freopen("filtered.csv", "w", stdout);

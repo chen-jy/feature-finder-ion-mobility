@@ -28,7 +28,7 @@ def get_f_points(features):
     return data_points
 
 # Need to rewrite this to be far more efficient
-@DeprecationWarning
+#@DeprecationWarning
 def compare_features_old(found_fm, openms_fm, baseline_fm, truth_fm):
     """Compares two sets of features (namely, those found by the new feature finder and
     those found by OpenMS), and finds the number of intersecting features.
@@ -131,60 +131,71 @@ def compare_features_slow(found_fm, openms_fm, baseline_fm, truth_fm):
     mz_threshold = 0.01
 
     # Compare new feature finder to existing
+    print('Comparing found features to OpenMS features')
     common_new = 0
+
     for ffeature in found_fm:
         for ofeature in openms_fm:
             if similar_features(ffeature, ofeature):
                 common_new += 1
 
     # Compare Leon's feature finder to existing
+    print('Comparing baseline featurs to OpenMS features')
     common_base = 0
-    for bfeature in baseline_fm:
-        for ofeature in openms_fm:
-            if similar_features(bfeature, ofeature):
-                common_base += 1
+
+    #for bfeature in baseline_fm:
+    #    for ofeature in openms_fm:
+    #        if similar_features(bfeature, ofeature):
+    #            common_base += 1
 
     # Compare new feature finder to real features
+    print('Comparing found features to tsv features')
     common_newtruth = 0
+
     for ffeature in found_fm:
         for tfeature in truth_fm:
             if similar_features(ffeature, tfeature):
                 common_newtruth += 1
 
     # Compare Leon's feature finder to real features
+    print('Comparing baseline features to tsv features')
     common_basetruth = 0
-    for bfeature in baseline_fm:
-        for tfeature in truth_fm:
-            if similar_features(bfeature, tfeature):
-                common_basetruth += 1
+
+    #for bfeature in baseline_fm:
+    #    for tfeature in truth_fm:
+    #        if similar_features(bfeature, tfeature):
+    #            common_basetruth += 1
 
     # Control: compare OpenMS feature finder to real features
+    print('Comparing OpenMS features to tsv features')
     common_control = 0
+
     for ofeature in openms_fm:
         for tfeature in truth_fm:
             if similar_features(ofeature, tfeature):
                 common_control += 1
 
     # Check if any features are found by all feature finders
+    print('Comparing all features')
     common_features = 0
     common = ms.FeatureMap()
 
-    for ffeature in found_fm:
-        for ofeature in openms_fm:
-            if not similar_features(ffeature, ofeature):
-                continue
+    #for ffeature in found_fm:
+    #    for ofeature in openms_fm:
+    #        if not similar_features(ffeature, ofeature):
+    #            continue
 
-            for bfeature in baseline_fm:
-                if not similar_features(ffeature, bfeature):
-                    continue
+    #        for bfeature in baseline_fm:
+    #            if not similar_features(ffeature, bfeature):
+    #                continue
 
-                for tfeature in truth_fm:
-                    if not similar_features(ffeature, tfeature):
-                        continue
+    #            for tfeature in truth_fm:
+    #                if not similar_features(ffeature, tfeature):
+    #                    continue
 
-                common_features += 1
-                # Maybe choose the greater convex hull as in im_binning?
-                common.push_back(ffeature)
+    #            common_features += 1
+    #            # Maybe choose the greater convex hull as in im_binning?
+    #            common.push_back(ffeature)
 
     print("Found    - OpenMS:  ", common_new.size())
     print("Baseline - OpenMS:  ", common_base.size())
@@ -202,7 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('--source', action='store', required=False, type=str)
     parser.add_argument('--baseline', action='store', required=True, type=str)
     parser.add_argument('--truth', action='store', required=True, type=str)
-    parser.add_argument('--out', action='store', required=True, type=str)
+    parser.add_argument('--outdir', action='store', required=True, type=str)
 
     args = parser.parse_args()
     found_features, openms_features, baseline_features, truth_features = \
@@ -227,7 +238,7 @@ if __name__ == '__main__':
                 clean_exp.addSpectrum(spec)
 
         openms_features = run_ff(clean_exp, 'centroided')
-        ms.FeatureXMLFile().store('openms_features.featureXML', openms_features)
+        ms.FeatureXMLFile().store(args.outdir + '/openms.featureXML', openms_features)
     else:
         ms.FeatureXMLFile().load(args.openms + '.featureXML', openms_features)
 
@@ -235,6 +246,7 @@ if __name__ == '__main__':
     ms.FeatureXMLFile().load(args.baseline + '.featureXML', baseline_features)
     ms.FeatureXMLFile().load(args.truth + '.featureXML', truth_features)
     
-    common_features = compare_features_slow(found_features, openms_features,
+    print('Features loaded, beginning comparison')
+    common_features = compare_features_old(found_features, openms_features,
                                        baseline_features, truth_features)
-    ms.FeatureXMLFile().store(args.out + '-common_features.featureXML', common_features)
+    ms.FeatureXMLFile().store(args.outdir + '/common.featureXML', common_features)
