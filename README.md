@@ -1,4 +1,7 @@
 # FragToPre
+
+**Warning: this README is currently outdated; it is not updated regularly.**
+
 Approaches to linking fragments to their precursors in mass spec data using four-dimensional feature finding (with retention time, mass to charge, intensity, and ion mobility).
 
 Tools:
