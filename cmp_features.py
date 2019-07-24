@@ -251,6 +251,11 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
         openms_fm (FeatureMap): An OpenMS feature map from FeatureFinderCentroided.
         baseline_fm (FeatureMap): An OpenMS feature map from the baseline.
         truth_fm (FeatureMap): An OpenMS feature map from the corresponding tsv file.
+        rt_threshold (float): The retention time threshold to determine if features are
+            similar.
+        mz_threshold (float): The mass to charge threshold to determine if features are
+            similar.
+        brute_force (bool): Whether or not to hide log messages (hidden if True).
 
     Returns:
         FeatureMap: An OpenMS feature map containing features found in all four input
@@ -278,7 +283,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                 if similar_features(found[i], openms[k]):
                     common_new += 1
         else:
-            for k in range(j, 0, -1):
+            for k in range(j, -1, -1):
                 if openms[k][1] < found[i][1] - mz_threshold:
                     break
                 if similar_features(found[i], openms[k]):
@@ -299,7 +304,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                 if similar_features(baseline[i], openms[k]):
                     common_base += 1
         else:
-            for k in range(j, 0, -1):
+            for k in range(j, -1, -1):
                 if openms[k][1] < baseline[i][1] - mz_threshold:
                     break
                 if similar_features(baseline[i], openms[k]):
@@ -320,7 +325,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                 if similar_features(found[i], truth[k]):
                     common_newtruth += 1
         else:
-            for k in range(j, 0, -1):
+            for k in range(j, -1, -1):
                 if truth[k][1] < found[i][1] - mz_threshold:
                     break
                 if similar_features(found[i], truth[k]):
@@ -341,7 +346,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                 if similar_features(baseline[i], truth[k]):
                     common_basetruth += 1
         else:
-            for k in range(j, 0, -1):
+            for k in range(j, -1, -1):
                 if truth[k][1] < baseline[i][1] - mz_threshold:
                     break
                 if similar_features(baseline[i], truth[k]):
@@ -362,7 +367,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                 if similar_features(openms[i], truth[k]):
                     common_control += 1
         else:
-            for k in range(j, 0, -1):
+            for k in range(j, -1, -1):
                 if truth[k][1] < openms[i][1] - mz_threshold:
                     break
                 if similar_features(openms[i], truth[k]):
@@ -371,24 +376,79 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
     # Check for features found by all feature finders
     if not brute_force:
         print('Comparing all features', flush=True)
-    common_features = 0
+    common_features, common_triad = 0, 0
     common = ms.FeatureMap()
 
     for i in range(len(truth)):
         a = binary_search_leftmost(found, 1, truth[i][1] - mz_threshold)
+        found_found = False
 
         if found[a][1] == truth[i][1] - mz_threshold:
             for j in range(a, len(found)):
                 if found[j][1] > truth[i][1] + mz_threshold:
                     break
                 if similar_features(truth[i], found[j]):
-                    pass
+                    found_found = True
+                    break
+
         else:
-            for j in range(a, 0, -1):
-                if found[k][1] < truth[i][1] - mz_threshold:
+            for j in range(a, -1, -1):
+                if found[j][1] < truth[i][1] - mz_threshold:
                     break
                 if similar_features(truth[i], found[j]):
-                    pass
+                    found_found = True
+                    break
+
+        if not found_found:
+            continue
+
+        b = binary_search_leftmost(openms, 1, truth[i][1] - mz_threshold)
+        found_openms = False
+
+        if openms[b][1] == truth[i][1] - mz_threshold:
+            for j in range(b, len(openms)):
+                if openms[j][1] > truth[i][1] + mz_threshold:
+                    break
+                if similar_features(truth[i], openms[j]):
+                    found_openms = True
+                    break
+        else:
+            for j in range(b, -1, -1):
+                if openms[j][1] < truth[i][1] - mz_threshold:
+                    break
+                if similar_features(truth[i], openms[j]):
+                    found_openms = True
+                    break
+
+        if not found_openms:
+            continue
+
+        # Feature found by the new feature finder, FeatureFinderCentroided, and the tsv
+        common_triad += 1
+
+        c = binary_search_leftmost(baseilne, 1, truth[i][1] - mz_threshold)
+        found_baseline = False
+
+        if baseline[c][1] == truth[i][1] - mz_threshold:
+            for j in range(c, len(baseline)):
+                if baseline[j][1] > truth[i][1] + mz_threshold:
+                    break
+                if similar_features(truth[i], baseline[j]):
+                    found_baseline = True
+                    break
+        else:
+            for j in range(c, -1, -1):
+                if baseline[j][1] < truth[i][1] - mz_threshold:
+                    break
+                if similar_features(truth[i], baseline[j]):
+                    found_baseline = True
+                    break
+
+        if not found_baseline:
+            continue
+
+        common_features += 1
+        common.push_back(truth[i])
 
     if not brute_force:
         print('\nFound features:    ', len(found))
@@ -401,6 +461,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
     print('Found - tsv:       ', common_newtruth)
     print('Baseline - tsv:    ', common_basetruth)
     print('OpenMS - tsv:      ', common_control)
+    print('All common (-BL):  ', common_triad)
     print('All common:        ', common_features, end='\n\n')
 
     return common
