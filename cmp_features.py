@@ -240,7 +240,8 @@ def compare_features_slow(found_fm, openms_fm, baseline_fm, truth_fm):
 
     return common
 
-def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
+def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
+                     mz_threshold=0.01, brute_force=False):
     """Compares the sets of features found by the new feature finder (im_binning.py),
     OpenMS's FeatureFinderCentroided, baseline.py, and the souce mzML's corresponding
     tsv file. Performs various comparisons and prints their results to stdout.
@@ -255,18 +256,16 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
         FeatureMap: An OpenMS feature map containing features found in all four input
             feature maps.
     """
-    # Need to play around with these
-    rt_threshold = 5
-    mz_threshold = 0.01
-
-    print('Extracting data points from feature maps', flush=True, end='\n\n')
+    if not brute_force:
+        print('Extracting data points from feature maps', flush=True, end='\n\n')
     found = get_fs_points(found_fm, itemgetter(1, 0))
     openms = get_fs_points(openms_fm, itemgetter(1, 0))
     baseline = get_fs_points(baseline_fm, itemgetter(1, 0))
     truth = get_fs_points(truth_fm, itemgetter(1, 0))
 
     # Compare new feature finder to existing
-    print('Comparing found features to OpenMS features', flush=True)
+    if not brute_force:
+        print('Comparing found features to OpenMS features', flush=True)
     common_new = 0
 
     for i in range(len(found)):
@@ -286,7 +285,8 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                     common_new += 1
 
     # Compare baseline to existing feature finder
-    print('Comparing baseline features to OpenMS features', flush=True)
+    if not brute_force:
+        print('Comparing baseline features to OpenMS features', flush=True)
     common_base = 0
 
     for i in range(len(baseline)):
@@ -306,7 +306,8 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                     common_base += 1
 
     # Compare new feature finder to tsv real features
-    print('Comparing found features to tsv features', flush=True)
+    if not brute_force:
+        print('Comparing found features to tsv features', flush=True)
     common_newtruth = 0
 
     for i in range(len(found)):
@@ -326,7 +327,8 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                     common_newtruth += 1
 
     # Compare baseline features to tsv real features
-    print('Comparing baseline features to tsv features', flush=True)
+    if not brute_force:
+        print('Comparing baseline features to tsv features', flush=True)
     common_basetruth = 0
 
     for i in range(len(baseline)):
@@ -346,7 +348,8 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                     common_basetruth += 1
 
     # Control test: compare OpenMS features to tsv real features
-    print('Comparing OpenMS features to tsv features', flush=True)
+    if not brute_force:
+        print('Comparing OpenMS features to tsv features', flush=True)
     common_control = 0
 
     for i in range(len(openms)):
@@ -366,7 +369,8 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                     common_control += 1
 
     # Check for features found by all feature finders
-    print('Comparing all features', flush=True)
+    if not brute_force:
+        print('Comparing all features', flush=True)
     common_features = 0
     common = ms.FeatureMap()
 
@@ -386,18 +390,18 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm):
                 if similar_features(truth[i], found[j]):
                     pass
 
-    print('\nFound features:    ', len(found))
-    print('Baseline features: ', len(baseline))
-    print('OpenMS features:   ', len(openms))
-    print('tsv features:      ', len(truth))
+    if not brute_force:
+        print('\nFound features:    ', len(found))
+        print('Baseline features: ', len(baseline))
+        print('OpenMS features:   ', len(openms))
+        print('tsv features:      ', len(truth))
 
     print('\nFound - OpenMS:    ', common_new)
     print('Baseline - OpenMS: ', common_base)
     print('Found - tsv:       ', common_newtruth)
     print('Baseline - tsv:    ', common_basetruth)
     print('OpenMS - tsv:      ', common_control)
-    print('All common:        ', common_features)
-    print()
+    print('All common:        ', common_features, end='\n\n')
 
     return common
 
@@ -409,10 +413,15 @@ if __name__ == '__main__':
     parser.add_argument('--baseline', action='store', required=True, type=str)
     parser.add_argument('--truth', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
+    parser.add_argument('--brute_force', action='store', required=False)
 
     args = parser.parse_args()
     found_features, openms_features, baseline_features, truth_features = \
         ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
+
+    brute_force = False
+    if args.brute_force is not None:
+        brute_force = True
 
     # No OpenMS features are provided; run the feature finder on the raw data first
     if args.openms is None:
@@ -441,8 +450,17 @@ if __name__ == '__main__':
     ms.FeatureXMLFile().load(args.baseline + '.featureXML', baseline_features)
     ms.FeatureXMLFile().load(args.truth + '.featureXML', truth_features)
     
-    print('Features loaded, beginning comparison', flush=True)
-    common_features = compare_features(found_features, openms_features,
+    if not brute_force:
+        print('Features loaded, beginning comparison', flush=True)
+        common_features = compare_features(found_features, openms_features,
                                        baseline_features, truth_features)
-    common_features.setUniqueIds()
-    ms.FeatureXMLFile().store(args.outdir + '/common.featureXML', common_features)
+        common_features.setUniqueIds()
+        ms.FeatureXMLFile().store(args.outdir + '/common.featureXML', common_features)
+    else:
+        rt_start = 1
+        mz_start = 0.005
+
+        for rt_threshold in range(rt_start, 10, 0.5):
+            for mz_threshold in range(mz_start, 0.5, 0.05):
+                compare_features(found_features, openms_features, baseline_features,
+                                 truth_features, rt_threshold, mz_threshold, True)
