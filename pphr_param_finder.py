@@ -48,12 +48,12 @@ if __name__ == '__main__':
     # Iterate through the params, and for each set, run PeakPickerHiRes and
     # FeatureFinderCentroided, and save the param sets for those that find at least the
     # target number of features
-    file = open("suitable_params.txt", "w+")
+    file = open(args.output + "/suitable_params.txt", "w+")
 
-    for stn in range(signal_to_noise, 1.5, 0.25):
+    for stn in np.arange(signal_to_noise, 1.5, 0.25):
         params.__setitem__(b'signal_to_noise', stn)
 
-        for wl in range(win_len, 301.0, 25.0):
+        for wl in np.arange(win_len, 301.0, 25.0):
             params.__setitem__(b'SignalToNoise:win_len', wl)
 
             for bc in range(bin_count, 41, 1):
@@ -62,7 +62,8 @@ if __name__ == '__main__':
                 for mre in range(min_required_elements, 15, 1):
                     params.__setitem__(b'SignalToNoise:min_required_elements', mre)
 
-                    pp = ms.PeakPickerHiRes(params)
+                    pp = ms.PeakPickerHiRes()
+                    pp.setParameters(params)
                     new_exp = ms.MSExperiment()
 
                     pp.pickExperiment(exp, new_exp)
