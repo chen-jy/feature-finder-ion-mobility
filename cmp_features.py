@@ -426,7 +426,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
         # Feature found by the new feature finder, FeatureFinderCentroided, and the tsv
         common_triad += 1
 
-        c = binary_search_leftmost(baseilne, 1, truth[i][1] - mz_threshold)
+        c = binary_search_leftmost(baseline, 1, truth[i][1] - mz_threshold)
         found_baseline = False
 
         if baseline[c][1] == truth[i][1] - mz_threshold:
@@ -521,7 +521,7 @@ if __name__ == '__main__':
         rt_start = 1
         mz_start = 0.005
 
-        for rt_threshold in range(rt_start, 10, 0.5):
-            for mz_threshold in range(mz_start, 0.5, 0.05):
+        for rt_threshold in np.arange(rt_start, 12, 0.5):
+            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
                 compare_features(found_features, openms_features, baseline_features,
                                  truth_features, rt_threshold, mz_threshold, True)
