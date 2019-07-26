@@ -6,9 +6,9 @@ Approaches to four-dimensional mass spectrometry feature finding (with retention
 
 Utilities:
 
-**baseline**: splits raw mzML data into frames by RT, then for each frame, swaps RT with IM. Next, FeatureFinderCentroided is run and the results are linked together across frames.
+**baseline**: splits raw mzML data into frames by RT, then for each frame, swaps RT with IM. Next, FeatureFinderCentroided is run, and the results are linked together across frames.
 
-Some arguments (obvious arguments will be skipped):
+Some arguments (obvious arguments will be skipped from hereon in):
 - mode: 0 to find features and link fragments to precursors, 1 to only find features, 2 to only link fragments to precursors
 - *Required*: infile, outfile, outdir, mode
 - *Note*: outdir must already exist
@@ -28,7 +28,7 @@ Some arguments:
 python im_binning.py --infile sample --outfile im --outdir run2 --num_bins 10 --peak_pick
 ```
 
-**cmp_features**: compares features in four featureXML files (intended to compare features found by im_binning, OpenMS's FeatureFinderCentroided, baseline, and the source file's corresponding .tsv file). Thresholds in the RT and m/z dimensions are used to determine "similarity", and the number of intersecting features is found.
+**cmp_features**: compares features in four featureXML files (intended for features found by im_binning, OpenMS's FeatureFinderCentroided, baseline, and the source file's corresponding .tsv file). Thresholds in the RT and m/z dimensions are used to determine "similarity", and the number of intersecting features is found.
 
 Some arguments:
 - found: the featureXML file produced by im_binning
@@ -36,7 +36,7 @@ Some arguments:
 - source: the raw mzML file; only required if FeatureFinderCentroided has not already been run (the OpenMS featureXML file does not exist)
 - baseline: the featureXML file produced by baseline
 - truth: the featureXML file (filtered and transformed by csvFilter and translate_features) of the raw data's corresponding .tsv file
-- brute_force: brute-force various threshold values, if this flag is present
+- brute_force: brute-forces various threshold values, if this flag is present
 - *Required*: found, openms OR source, baseline, truth, outdir
 - *Note*: outdir must already exist
 ```
@@ -56,7 +56,7 @@ python pphr_param_finder.py --input run1/im-pass1-bin1 --output run4 --target 25
 **translate_features**: converts features in .csv format to .featureXML format.
 
 Some arguments:
-- **Required**: input, output
+- *Required*: input, output
 ```
 python translate_features.py --input sample_csv --output filtered
 ```
@@ -65,10 +65,11 @@ python translate_features.py --input sample_csv --output filtered
 
 Some arguments:
 - mode: 0 to filter by q, 1 to extract triplet data
-- **Required**: mode
+- *Required*: mode
+- *Note*: the threshold value can be changed within the source code
 ```
 g++ csvFilter.cpp -o csvFilter
 ./csvFilter <mode>
 ```
 
-**Legacy tools**: include cluster_finder, plane_fitting, and ransac. These are old approaches and are no longer supported or documented.
+**Legacy tools**: cluster_finder, plane_fitting, and ransac. This is an old approach and is no longer supported or documented.
