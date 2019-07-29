@@ -35,6 +35,23 @@ def get_fs_points(features, key):
     data_points = get_f_points(features)
     return sorted(data_points, key=key)
 
+def point_to_feature(point):
+    """Translates a feature, represented by a list, into an OpenMS Feature object.
+
+    Args:
+        point (list<float>): Three floats, representing RT, MZ, and intensity, in that
+            order.
+
+    Returns:
+        Feature: An equivalent OpenMS Feature object that only contains RT, MZ, and
+            intensity information.
+    """
+    f = ms.Feature()
+    f.setRT(point[0])
+    f.setMZ(point[1])
+    f.setIntensity(point[2])
+    return f
+
 def binary_search_leftmost(arr, idx, target):
     """Binary search a single column (idx) in a 2D array.
 
@@ -314,6 +331,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
     if not brute_force:
         print('Comparing found features to tsv features', flush=True)
     common_newtruth = 0
+    good_features = ms.Feature()
 
     for i in range(len(found)):
         j = binary_search_leftmost(truth, 1, found[i][1] - mz_threshold)
@@ -324,12 +342,14 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                     break
                 if similar_features(found[i], truth[k]):
                     common_newtruth += 1
+                    good_features.push_back(point_to_feature(found[i]))
         else:
             for k in range(j, -1, -1):
                 if truth[k][1] < found[i][1] - mz_threshold:
                     break
                 if similar_features(found[i], truth[k]):
                     common_newtruth += 1
+                    good_features.push_back(point_to_feature(found[i]))
 
     # Compare baseline features to tsv real features
     if not brute_force:
@@ -464,11 +484,11 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
         print('All common (-BL):  ', common_triad)
         print('All common:        ', common_features, end='\n\n')
     else:
-        print(rt_theshold, mz_threshold)
+        print(rt_threshold, mz_threshold)
         print(common_new, common_base, common_newtruth, common_basetruth, common_control,
               common_triad, common_features)
 
-    return common
+    return good_features
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison.')
