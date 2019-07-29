@@ -254,7 +254,7 @@ def combine_spectra(exp1, exp2):
         exp1.addSpectrum(spec)
 
 # Is there a better way to do this?
-def similar_features(feature1, feature2):
+def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
     """Determines if two features are "similar"; i.e. both their RTs and M/Zs are within a
     certain threshold of each other.
 
@@ -263,13 +263,12 @@ def similar_features(feature1, feature2):
             representing a feature.
         feature2 (Feature or list<float>): An OpenMS feature or a list of floats
             representing a feature.
+        rt_threshold (float): The maximum threshold in the RT dimension.
+        mz_threshold (float): The maximum threshold in the m/z dimension.
 
     Returns:
         bool: True iff feature1 and feature2 are similar.
     """
-    rt_threshold = 5
-    mz_threshold = 0.01
-
     if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
         return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
                 abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
@@ -307,7 +306,7 @@ def bb_area(box):
     _max = box.maxPosition()
     return abs(_min[0] - _max[0]) * abs(_min[1] * _max[1])
 
-def match_features(features1, features2):
+def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     """Matches overlapping features from adjacent bins to each other.
     
     For example, in the first pass of binning, a feature may not be contained entirely
@@ -317,6 +316,8 @@ def match_features(features1, features2):
     Args:
         features1 (list<FeatureMap>): A list of OpenMS feature maps from the first pass.
         features2 (list<FeatureMap>): A list of OpenMS feature maps from the second pass.
+        rt_threshold (float): The threshold in the RT dimension. For brute-forcing.
+        mz_threshold (float): The threshold in the m/z dimension. For brute-forcing.
 
     Returns:
         FeatureMap: An OpenMS feature map containing all of the uniquely found features.
