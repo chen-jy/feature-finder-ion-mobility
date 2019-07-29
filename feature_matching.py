@@ -1,5 +1,7 @@
 from im_binning import *
 
+import multiprocessing as mp
+
 run_num, num_bins = -1, -1
 fm1, fm2 = [], []
 
@@ -18,6 +20,14 @@ def load_features(base_fp, run_name):
                                  '-pass2-bin' + str(i) + '.featureXML', fm)
         fm2.append(fm)
 
+def match_work(rt_start, rt_stop, rt_inc, q):
+    for rt_threshold in np.arange(rt_start, rt_stop, rt_inc):
+        for mz_threshold in np.arange(0.005, 0.5, 0.05):
+            features = match_features(fm1, fm2, rt_threshold, mz_threshold)
+            q.put([rt_threshold, mz_threshold, features.size()])
+
+    q.put('DONE')
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Feature matching threshold finder.')
     parser.add_argument('--base_fp', action='store', required=True, type=str)
@@ -31,25 +41,47 @@ if __name__ == '__main__':
 
     load_features(args.base_fp, args.run_name)
 
-    rt_start, mz_start = 1, 0.005
-    min_features, min_rt, min_mz = float('inf'), -1, -1
+    q = mp.Queue()
+    procs = [mp.Process(target=match_work, args=(0, 4, 0.5, q,)),
+             mp.Process(target=match_work, args=(4, 8, 0.5, q,)),
+             mp.Process(target=match_work, args=(8, 12, 0.5, q,))]
 
-    f = open(args.output + '/fm_output.txt', 'w+')
+    for i in range(1):
+        procs[i].start()
 
-    for rt_threshold in np.arange(rt_start, 12, 0.5):
-        for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-            features = match_features(fm1, fm2, rt_threshold, mz_threshold)
-            if features.size() < min_features:
-                min_features = features.size()
-                min_rt, min_mz = rt_threshold, mz_threshold
+    procs_done = 0
+    while True:
+        msg = q.get()
+        if (msg == 'DONE'):
+            procs_done += 1
+            if (procs_done == 1):
+                break
+            continue
 
-            f.write(str(rt_threshold) + ' ' + str(mz_threshold) + '\n')
-            f.write(str(features.size()) + '\n')
+        print(msg[0], msg[1], msg[2])
 
-    f.write('\n' + str(min_rt) + ' ' + str(min_mz) + '\n')
-    f.write(str(min_features) + '\n')
+    for i in range(len(procs)):
+        procs[i].join()
 
-    f.close()
+    #rt_start, mz_start = 1, 0.005
+    #min_features, min_rt, min_mz = float('inf'), -1, -1
 
-    features = match_features(fm1, fm2, min_rt, min_mz)
-    ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
+    #f = open(args.output + '/fm_output.txt', 'w+')
+
+    #for rt_threshold in np.arange(rt_start, 12, 0.5):
+    #    for mz_threshold in np.arange(mz_start, 0.5, 0.05):
+    #        features = match_features(fm1, fm2, rt_threshold, mz_threshold)
+    #        if features.size() < min_features:
+    #            min_features = features.size()
+    #            min_rt, min_mz = rt_threshold, mz_threshold
+
+    #        f.write(str(rt_threshold) + ' ' + str(mz_threshold) + '\n')
+    #        f.write(str(features.size()) + '\n')
+
+    #f.write('\n' + str(min_rt) + ' ' + str(min_mz) + '\n')
+    #f.write(str(min_features) + '\n')
+
+    #f.close()
+
+    #features = match_features(fm1, fm2, min_rt, min_mz)
+    #ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
