@@ -30,10 +30,11 @@ if __name__ == '__main__':
     run_num, num_bins = args.run_num, args.num_bins
 
     load_features(args.base_fp, args.run_name)
-    print('Done loading', flush=True)
 
     rt_start, mz_start = 1, 0.005
     min_features, min_rt, min_mz = float('inf'), -1, -1
+
+    f = open(args.output + '/fm_output.txt', 'w+')
 
     for rt_threshold in np.arange(rt_start, 12, 0.5):
         for mz_threshold in np.arange(mz_start, 0.5, 0.05):
@@ -42,11 +43,13 @@ if __name__ == '__main__':
                 min_features = features.size()
                 min_rt, min_mz = rt_threshold, mz_threshold
 
-            print(rt_threshold, mz_threshold, flush=True)
-            print(features.size())
+            f.write(str(rt_threshold) + ' ' + str(mz_threshold) + '\n')
+            f.write(str(features.size()) + '\n')
 
-    print('\n', min_rt, min_mz)
-    print(min_features)
+    f.write('\n' + str(min_rt) + ' ' + str(min_mz) + '\n')
+    f.write(str(min_features) + '\n')
+
+    f.close()
 
     features = match_features(fm1, fm2, min_rt, min_mz)
     ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
