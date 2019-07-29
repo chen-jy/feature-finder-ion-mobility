@@ -35,6 +35,16 @@ def get_fs_points(features, key):
     data_points = get_f_points(features)
     return sorted(data_points, key=key)
 
+def get_fsi_points(features, key):
+    """Does the same thing as get_f_points(), but also keeps a pointer (as an integer
+    index) to the original OpenMS Feature object, and sorts the data according to the
+    key.
+    """
+    data_points = get_f_points(features)
+    for i in range(len(data_points)):
+        data_points[i].append(i)
+    return sorted(data_points, key=key)
+
 def point_to_feature(point):
     """Translates a feature, represented by a list, into an OpenMS Feature object.
 
@@ -75,188 +85,6 @@ def binary_search_leftmost(arr, idx, target):
             r = m
     return l if l < len(arr) else l - 1
 
-# Need to rewrite this to be far more efficient
-@DeprecationWarning
-def compare_features_old(found_fm, openms_fm, baseline_fm, truth_fm):
-    """Compares two sets of features (namely, those found by the new feature finder and
-    those found by OpenMS), and finds the number of intersecting features.
-
-    Args:
-        found_fm (FeatureMap): An OpenMS feature map containing feaatures found by the
-            new feature finder.
-        openms_fm (FeatureMap): An OpenMS feature map containing features found by
-            OpenMS.
-        baseline_fm (FeatureMap): An OpenMS feature map containing features found by the
-            baseline (baseline.py).
-        truth_fm (FeatureMap): An OpenMS feature map containing features extracted from
-            the data's corresponding tsv (csv) file.
-
-    Returns:
-        FeatureMap: A list of features found in all feature maps (within a certain
-            threshold).
-    """
-    # Let N be the greatest number of features in the input FeatureMap
-
-    # O(4N) => O(N) (need to check if I even need to extract points!)
-    f1 = get_f_points(found_fm)
-    f2 = get_f_points(openms_fm)
-    f3 = get_f_points(baseline_fm)
-    f4 = get_f_points(truth_fm)
-
-    # Sorting for easier comparisons
-    # O(4(N lg N)) => O(N lg N)
-    found_features = sorted(f1, key=itemgetter(0, 1, 2))
-    openms_features = sorted(f2, key=itemgetter(0, 1, 2))
-    baseline_features = sorted(f3, key=itemgetter(0, 1, 2))
-    truth_features = sorted(f4, key=itemgetter(0, 1, 2))
-
-    rt_threshold = 5
-    mz_threshold = 0.01
-
-    # Get the features similar between found and OpenMS
-    num_intersecting = 0
-    common_12_features = ms.FeatureMap()
-
-    # O(N^2) : Use binary search to improve to O(N lg N)
-    for ffeature in found_features:
-        for ofeature in openms_features:
-            f = ms.Feature()
-            f.setRT(ffeature[0])
-            f.setMZ(ffeature[1])
-            f.setIntensity(ffeature[2])
-
-            if ffeature == ofeature or (abs(ffeature[0] - ofeature[0]) < rt_threshold and
-                                        abs(ffeature[1] - ofeature[1]) < mz_threshold):
-                num_intersecting += 1
-                common_12_features.push_back(f)
-
-    num_intersecting = 0
-    common_123_features = ms.FeatureMap()
-
-    # O(N^2)
-    for cfeature in common_12_features:
-        for bfeature in baseline_features:
-            f = ms.Feature()
-            f.setRT(cfeature.getRT())
-            f.setMZ(cfeature.getMZ())
-            f.setIntensity(cfeature.getIntensity())
-
-            if cfeature == bfeature or (abs(cfeature.getRT() - bfeature[0]) < rt_threshold and
-                                        abs(cfeature.getMZ() - bfeature[1]) < mz_threshold):
-                num_intersecting += 1
-                common_123_features.push_back(f)
-
-    num_intersecting = 0
-    common_features = ms.FeatureMap()
-
-    # O(N^2)
-    for cfeature in common_123_features:
-        for tfeature in truth_features:
-            f = ms.Feature()
-            f.setRT(cfeature.getRT())
-            f.setMZ(cfeature.getMZ())
-            f.setIntensity(cfeature.getIntensity())
-
-            if cfeature == tfeature or (abs(cfeature.getRT() - tfeature[0]) < rt_threshold and
-                                        abs(cfeature.getMZ() - tfeature[1]) < mz_threshold):
-                num_intersecting += 1
-                common_features.push_back(f)
-
-    # Create the full venn diagram?
-    print("found features:         ", len(found_features))
-    print("openms features:        ", len(openms_features))
-    print("baseline features:      ", len(baseline_features))
-    print("truth features:         ", len(truth_features))
-
-    print("# of fo intersecting:   ", common_12_features.size())
-    print("# of fob intersecting:  ", common_123_features.size())
-    print("total intersecting:     ", num_intersecting)
-
-    # Total WC runtime: O(N + N lg N + N^2) => O(N(lg N + N))
-    return common_features
-
-@PendingDeprecationWarning
-def compare_features_slow(found_fm, openms_fm, baseline_fm, truth_fm):
-    # Need to play around with these
-    rt_threshold = 5
-    mz_threshold = 0.01
-
-    # Compare new feature finder to existing
-    print('Comparing found features to OpenMS features')
-    common_new = 0
-
-    for ffeature in found_fm:
-        for ofeature in openms_fm:
-            if similar_features(ffeature, ofeature):
-                common_new += 1
-
-    # Compare Leon's feature finder to existing
-    print('Comparing baseline featurs to OpenMS features')
-    common_base = 0
-
-    #for bfeature in baseline_fm:
-    #    for ofeature in openms_fm:
-    #        if similar_features(bfeature, ofeature):
-    #            common_base += 1
-
-    # Compare new feature finder to real features
-    print('Comparing found features to tsv features')
-    common_newtruth = 0
-
-    for ffeature in found_fm:
-        for tfeature in truth_fm:
-            if similar_features(ffeature, tfeature):
-                common_newtruth += 1
-
-    # Compare Leon's feature finder to real features
-    print('Comparing baseline features to tsv features')
-    common_basetruth = 0
-
-    #for bfeature in baseline_fm:
-    #    for tfeature in truth_fm:
-    #        if similar_features(bfeature, tfeature):
-    #            common_basetruth += 1
-
-    # Control: compare OpenMS feature finder to real features
-    print('Comparing OpenMS features to tsv features')
-    common_control = 0
-
-    for ofeature in openms_fm:
-        for tfeature in truth_fm:
-            if similar_features(ofeature, tfeature):
-                common_control += 1
-
-    # Check if any features are found by all feature finders
-    print('Comparing all features')
-    common_features = 0
-    common = ms.FeatureMap()
-
-    #for ffeature in found_fm:
-    #    for ofeature in openms_fm:
-    #        if not similar_features(ffeature, ofeature):
-    #            continue
-
-    #        for bfeature in baseline_fm:
-    #            if not similar_features(ffeature, bfeature):
-    #                continue
-
-    #            for tfeature in truth_fm:
-    #                if not similar_features(ffeature, tfeature):
-    #                    continue
-
-    #            common_features += 1
-    #            # Maybe choose the greater convex hull as in im_binning?
-    #            common.push_back(ffeature)
-
-    print("Found    - OpenMS:  ", common_new)
-    print("Baseline - OpenMS:  ", common_base)
-    print("Found    - tsv:     ", common_newtruth)
-    print("Baseline - tsv:     ", common_basetruth)
-    print("OpenMS   - tsv:     ", common_control)
-    print("All common:         ", common_features)
-
-    return common
-
 def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                      mz_threshold=0.01, brute_force=False):
     """Compares the sets of features found by the new feature finder (im_binning.py),
@@ -280,10 +108,10 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
     """
     if not brute_force:
         print('Extracting data points from feature maps', flush=True, end='\n\n')
-    found = get_fs_points(found_fm, itemgetter(1, 0))
-    openms = get_fs_points(openms_fm, itemgetter(1, 0))
-    baseline = get_fs_points(baseline_fm, itemgetter(1, 0))
-    truth = get_fs_points(truth_fm, itemgetter(1, 0))
+    found = get_fsi_points(found_fm, itemgetter(1, 0))
+    openms = get_fsi_points(openms_fm, itemgetter(1, 0))
+    baseline = get_fsi_points(baseline_fm, itemgetter(1, 0))
+    truth = get_fsi_points(truth_fm, itemgetter(1, 0))
 
     # Compare new feature finder to existing
     if not brute_force:
@@ -342,14 +170,16 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
                     break
                 if similar_features(found[i], truth[k]):
                     common_newtruth += 1
-                    good_features.push_back(point_to_feature(found[i]))
+                    #good_features.push_back(point_to_feature(found[i]))
+                    good_features.push_back(found_fm[found[i][3]])
         else:
             for k in range(j, -1, -1):
                 if truth[k][1] < found[i][1] - mz_threshold:
                     break
                 if similar_features(found[i], truth[k]):
                     common_newtruth += 1
-                    good_features.push_back(point_to_feature(found[i]))
+                    #good_features.push_back(point_to_feature(found[i]))
+                    good_features.push_back(found_fm[found[i][3]])
 
     # Compare baseline features to tsv real features
     if not brute_force:
