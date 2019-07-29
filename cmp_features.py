@@ -456,13 +456,17 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
         print('OpenMS features:   ', len(openms))
         print('tsv features:      ', len(truth))
 
-    print('\nFound - OpenMS:    ', common_new)
-    print('Baseline - OpenMS: ', common_base)
-    print('Found - tsv:       ', common_newtruth)
-    print('Baseline - tsv:    ', common_basetruth)
-    print('OpenMS - tsv:      ', common_control)
-    print('All common (-BL):  ', common_triad)
-    print('All common:        ', common_features, end='\n\n')
+        print('\nFound - OpenMS:    ', common_new)
+        print('Baseline - OpenMS: ', common_base)
+        print('Found - tsv:       ', common_newtruth)
+        print('Baseline - tsv:    ', common_basetruth)
+        print('OpenMS - tsv:      ', common_control)
+        print('All common (-BL):  ', common_triad)
+        print('All common:        ', common_features, end='\n\n')
+    else:
+        print(rt_theshold, mz_threshold)
+        print(common_new, common_base, common_newtruth, common_basetruth, common_control,
+              common_triad, common_features)
 
     return common
 
