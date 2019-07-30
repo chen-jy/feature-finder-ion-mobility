@@ -35,53 +35,72 @@ if __name__ == '__main__':
     parser.add_argument('--run_num', action='store', required=True, type=str)
     parser.add_argument('--num_bins', action='store', required=True, type=int)
     parser.add_argument('--output', action='store', required=True, type=str)
+    parser.add_argument('--nprocs', action='store', required=True, type=int)
+    parser.add_argument('--mp_mode', action='store', required=True, type=int)
 
     args = parser.parse_args()
     run_num, num_bins = args.run_num, args.num_bins
-
     load_features(args.base_fp, args.run_name)
 
-    q = mp.Queue()
-    procs = [mp.Process(target=match_work, args=(0, 4, 0.5, q,)),
-             mp.Process(target=match_work, args=(4, 8, 0.5, q,)),
-             mp.Process(target=match_work, args=(8, 12, 0.5, q,))]
+    # ========== POOL IMPLEMENTATION ==========
 
-    for i in range(1):
-        procs[i].start()
+    if args.mp_mode == 1:
+        q = mp.Queue()
+        rt_start, mz_start = 1, 0.005
 
-    procs_done = 0
-    while True:
-        msg = q.get()
-        if (msg == 'DONE'):
-            procs_done += 1
-            if (procs_done == 1):
-                break
-            continue
+        with mp.Pool(processes = args.nprocs) as pool:
+            for rt_threshold in np.arange(rt_start, 12, 0.25):
+                for mz_threshold in np.arange(mz_start, 0.5, 0.05):
+                    pool.apply_async(match_features, (fm1, fm2, rt_threshold,
+                                                      mz_threshold))
 
-        print(msg[0], msg[1], msg[2])
+    # ========== PROCESS IMPLEMENTATION ==========
 
-    for i in range(len(procs)):
-        procs[i].join()
+    elif args.mp_mode == 2:
+        q = mp.Queue()
+        procs = [mp.Process(target=match_work, args=(0, 3, 0.25, q,)),
+                 mp.Process(target=match_work, args=(3, 6, 0.25, q,)),
+                 mp.Process(target=match_work, args=(6, 9, 0.25, q,)),
+                 mp.Process(target=match_work, args=(9, 12, 0.25, q,))]
 
-    #rt_start, mz_start = 1, 0.005
-    #min_features, min_rt, min_mz = float('inf'), -1, -1
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join()
 
-    #f = open(args.output + '/fm_output.txt', 'w+')
+        done = 0
+        while True:
+            output = q.get()
+            if output == 'DONE':
+                done += 1
+                if done == args.nprocs:
+                    break
+                continue
+            print(output[0], output[1], output[2])
 
-    #for rt_threshold in np.arange(rt_start, 12, 0.5):
-    #    for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-    #        features = match_features(fm1, fm2, rt_threshold, mz_threshold)
-    #        if features.size() < min_features:
-    #            min_features = features.size()
-    #            min_rt, min_mz = rt_threshold, mz_threshold
+    # ========== SERIAL IMPLEMENTATION ==========
 
-    #        f.write(str(rt_threshold) + ' ' + str(mz_threshold) + '\n')
-    #        f.write(str(features.size()) + '\n')
+    elif args.mp_mode == 0:
 
-    #f.write('\n' + str(min_rt) + ' ' + str(min_mz) + '\n')
-    #f.write(str(min_features) + '\n')
+        rt_start, mz_start = 1, 0.005
+        min_features, min_rt, min_mz = float('inf'), -1, -1
 
-    #f.close()
+        f = open(args.output + '/fm_output.txt', 'w+')
 
-    #features = match_features(fm1, fm2, min_rt, min_mz)
-    #ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
+        for rt_threshold in np.arange(rt_start, 12, 0.5):
+            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
+                features = match_features(fm1, fm2, rt_threshold, mz_threshold)
+                if features.size() < min_features:
+                    min_features = features.size()
+                    min_rt, min_mz = rt_threshold, mz_threshold
+
+                f.write(str(rt_threshold) + ' ' + str(mz_threshold) + '\n')
+                f.write(str(features.size()) + '\n')
+
+        f.write('\n' + str(min_rt) + ' ' + str(min_mz) + '\n')
+        f.write(str(min_features) + '\n')
+
+        f.close()
+
+        features = match_features(fm1, fm2, min_rt, min_mz)
+        ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
