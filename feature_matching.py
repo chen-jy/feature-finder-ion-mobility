@@ -28,6 +28,10 @@ def match_work(rt_start, rt_stop, rt_inc, q):
 
     q.put('DONE')
 
+def match_work_q(fm1, fm2, rt, mz, q):
+    features = match_features(fm1, fm2, rt, mz)
+    q.put([rt, mz, features.size()])
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Feature matching threshold finder.')
     parser.add_argument('--base_fp', action='store', required=True, type=str)
@@ -51,13 +55,19 @@ if __name__ == '__main__':
         with mp.Pool(processes = args.nprocs) as pool:
             for rt_threshold in np.arange(rt_start, 12, 0.25):
                 for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-                    pool.apply_async(match_features, (fm1, fm2, rt_threshold,
-                                                      mz_threshold))
+                    pool.apply_async(match_work_q, (fm1, fm2, rt_threshold,
+                                                    mz_threshold, q,))
+
+        # What if the queue fills up and a proccess blocks?
+        while not q.empty():
+            output = q.get()
+            print(*output)
 
     # ========== PROCESS IMPLEMENTATION ==========
 
     elif args.mp_mode == 2:
         q = mp.Queue()
+        # Maybe leave one core to handle output so the queue never fills up
         procs = [mp.Process(target=match_work, args=(0, 3, 0.25, q,)),
                  mp.Process(target=match_work, args=(3, 6, 0.25, q,)),
                  mp.Process(target=match_work, args=(6, 9, 0.25, q,)),
@@ -71,17 +81,17 @@ if __name__ == '__main__':
         done = 0
         while True:
             output = q.get()
+
             if output == 'DONE':
                 done += 1
                 if done == args.nprocs:
                     break
-                continue
-            print(output[0], output[1], output[2])
+            else:
+                print(*output)
 
     # ========== SERIAL IMPLEMENTATION ==========
 
     elif args.mp_mode == 0:
-
         rt_start, mz_start = 1, 0.005
         min_features, min_rt, min_mz = float('inf'), -1, -1
 
