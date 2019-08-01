@@ -1,6 +1,7 @@
 from im_binning import *
 
 import multiprocessing as mp
+import platform
 
 run_num, num_bins = -1, -1
 fm1, fm2 = [], []
@@ -20,13 +21,20 @@ def load_features(base_fp, run_name):
                                  '-pass2-bin' + str(i) + '.featureXML', fm)
         fm2.append(fm)
 
+# Linux-based systems spawn processes through fork(), so copying globals is unnecessary
+if platform.system() == 'Windows':
+    def init_globals(m1, m2):
+        global fm1, fm2
+        fm1, fm2 = m1, m2
+
 def match_work(rt_start, rt_stop, rt_inc, q):
     for rt_threshold in np.arange(rt_start, rt_stop, rt_inc):
         for mz_threshold in np.arange(0.005, 0.5, 0.05):
             features = match_features(fm1, fm2, rt_threshold, mz_threshold)
             q.put([rt_threshold, mz_threshold, features.size()])
 
-    q.put('DONE')
+    # A sentinel to signal end of writing
+    q.put(None)
 
 def match_work_q(fm1, fm2, rt, mz, q):
     features = match_features(fm1, fm2, rt, mz)
@@ -34,6 +42,7 @@ def match_work_q(fm1, fm2, rt, mz, q):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Feature matching threshold finder.')
+    # TODO: reduce the number of args
     parser.add_argument('--base_fp', action='store', required=True, type=str)
     parser.add_argument('--run_name', action='store', required=True, type=str)
     parser.add_argument('--run_num', action='store', required=True, type=str)
@@ -49,16 +58,24 @@ if __name__ == '__main__':
     # ========== POOL IMPLEMENTATION ==========
 
     if args.mp_mode == 1:
-        q = mp.Queue()
+        man = mp.Manager()
+        q = man.Queue()
         rt_start, mz_start = 1, 0.005
 
-        with mp.Pool(processes = args.nprocs) as pool:
-            for rt_threshold in np.arange(rt_start, 12, 0.25):
-                for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-                    pool.apply_async(match_work_q, (fm1, fm2, rt_threshold,
-                                                    mz_threshold, q,))
+        if platform.system() == 'Windows':
+            pool = mp.Pool(args.nprocs, init_globals(fm1, fm2))
+        else:
+            pool = mp.Pool(args.nprocs)
 
-        # What if the queue fills up and a proccess blocks?
+        for rt_threshold in np.arange(rt_start, 12, 0.25):
+            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
+                pool.apply_async(match_work_q, (fm1, fm2, rt_threshold, mz_threshold,
+                                                q,))
+
+        pool.close()
+        pool.join()
+
+        # What if the queue fills up and a child blocks while writing?
         while not q.empty():
             output = q.get()
             print(*output)
@@ -82,7 +99,7 @@ if __name__ == '__main__':
         while True:
             output = q.get()
 
-            if output == 'DONE':
+            if output is None:
                 done += 1
                 if done == args.nprocs:
                     break
