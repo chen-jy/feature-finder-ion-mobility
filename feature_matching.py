@@ -3,29 +3,26 @@ from im_binning import *
 import multiprocessing as mp
 import platform
 
-run_num, num_bins = -1, -1
+num_bins = -1
 fm1, fm2 = [], []
 
-def load_features(base_fp, run_name):
+def load_features(input):
     """Loads both of the OpenMS FeatureMap objects created by im_binning into the two
     global lists.
 
     Args:
-        base_fp (str): The base filepath for the selected experiment. Subject to change.
-        run_name (str): The name of the experiment (--out flag). Subject to change.
+        input (str): The input directory + '/' + the name of the run + the run number.
     """
     global fm1, fm2
 
     for i in range(num_bins):
         fm = ms.FeatureMap()
-        ms.FeatureXMLFile().load(base_fp + str(run_num) + '/' + run_name + str(run_num) +
-                                 '-pass1-bin' + str(i) + '.featureXML', fm)
+        ms.FeatureXMLFile().load(input + '-pass1-bin' + str(i) + '.featureXML', fm)
         fm1.append(fm)
 
     for i in range(num_bins + 1):
         fm = ms.FeatureMap()
-        ms.FeatureXMLFile().load(base_fp + str(run_num) + '/' + run_name + str(run_num) +
-                                 '-pass2-bin' + str(i) + '.featureXML', fm)
+        ms.FeatureXMLFile().load(input + '-pass2-bin' + str(i) + '.featureXML', fm)
         fm2.append(fm)
 
 # Cannot use multithreading effectively due to the GIL, so shmem becomes a problem
@@ -48,7 +45,7 @@ def match_work(rt_start, rt_stop, rt_inc, q):
     Args:
         rt_start (float): The starting RT value to test.
         rt_stop (float): The last (exclusive) value to test.
-        rt_inc (float): How much to increase RT by each step.
+        rt_inc (float): How much to increase RT by at each step.
         q (Queue): A multiprocessing.Manager.Queue object for communication.
     """
     for rt_threshold in np.arange(rt_start, rt_stop, rt_inc):
@@ -57,53 +54,69 @@ def match_work(rt_start, rt_stop, rt_inc, q):
             q.put([rt_threshold, mz_threshold, features.size()])
 
     # A sentinel to signal end of writing
-    q.put(None)
+    #q.put(None)
 
-def match_work_pool(fm1, fm2, rt_threshold, mz_threshold, q):
-    """Tries to match/map featurse in both binning runs together. Only tests a specific
+def match_work_pool(rt_threshold, mz_threshold, q):
+    """Tries to match/map features in both binning runs together. Only tests a specific
     set of parameters; this represents a single task in a work pool.
 
     Args:
-        fm1 (list<FeatureMap>): Pass in fm1.
-        fm2 (list<FeatureMap>): Pass in fm2.
         rt_threshold (float): The RT value to test.
         mz_threshold (float): The m/z value to test.
-        q (Queue): A multiprocessing.Manager.Queue object for communication
+        q (Queue): A multiprocessing.Manager.Queue object for communication.
     """
     features = match_features(fm1, fm2, rt_threshold, mz_threshold)
     q.put([rt_threshold, mz_threshold, features.size()])
+    print('done something')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Feature matching threshold finder.')
-    # TODO: reduce the number of args
-    parser.add_argument('--base_fp', action='store', required=True, type=str)
-    parser.add_argument('--run_name', action='store', required=True, type=str)
-    parser.add_argument('--run_num', action='store', required=True, type=str)
-    parser.add_argument('--num_bins', action='store', required=True, type=int)
+    parser.add_argument('--input', action='store', required=True, type=str)
     parser.add_argument('--output', action='store', required=True, type=str)
-    parser.add_argument('--nprocs', action='store', required=True, type=int)
-    parser.add_argument('--mp_mode', action='store', required=True, type=int)
+    parser.add_argument('--nbins', action='store', required=True, type=int)
+    parser.add_argument('--nprocs', action='store', required=False, type=int)
+    parser.add_argument('--mp_mode', action='store', required=False, type=int)
 
     args = parser.parse_args()
-    run_num, num_bins = args.run_num, args.num_bins
-    load_features(args.base_fp, args.run_name)
+    num_bins = args.nbins
+    load_features(args.input)
+
+    # ========== SERIAL IMPLEMENTATION ==========
+
+    if args.nprocs is None or args.mp_mode is None or args.mp_mode == 0:
+        rt_start, mz_start = 1, 0.005
+        # Also keep track of the param set that produces the "best" mapping
+        min_features, min_rt, min_mz = float('inf'), -1, -1
+
+        for rt_threshold in np.arange(rt_start, 12, 0.5):
+            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
+                features = match_features(fm1, fm2, rt_threshold, mz_threshold)
+                if features.size() < min_features:
+                    min_features = features.size()
+                    min_rt, min_mz = rt_threshold, mz_threshold
+
+                print(rt_threshold, mz_threshold, features.size())
+
+        print(min_rt, min_mz, min_features)
+        features = match_features(fm1, fm2, min_rt, min_mz)
+        ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
 
     # ========== WORK POOL IMPLEMENTATION ==========
 
-    if args.mp_mode == 1:
+    elif args.mp_mode == 1:
         man = mp.Manager()
         q = man.Queue()
-        rt_start, mz_start = 1, 0.005
+        rt_start, mz_start = 10, 0.01
 
+        # Doesn't work, since FeatureMaps can't be pickled
         if platform.system() == 'Windows':
-            pool = mp.Pool(args.nprocs, init_globals(fm1, fm2))
+            pool = mp.Pool(args.nprocs, init_globals, (fm1, fm2,))
         else:
             pool = mp.Pool(args.nprocs)
 
-        for rt_threshold in np.arange(rt_start, 12, 0.25):
-            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-                pool.apply_async(match_work_pool, (fm1, fm2, rt_threshold, mz_threshold,
-                                                   q,))
+        for rt_threshold in np.arange(rt_start, 11, 0.5):
+            for mz_threshold in np.arange(mz_start, 0.05, 0.01):
+                pool.apply_async(match_work_pool, (rt_threshold, mz_threshold, q,))
 
         pool.close()
         pool.join()
@@ -119,10 +132,10 @@ if __name__ == '__main__':
         man = mp.Manager()
         q = man.Queue()
         # Maybe leave one core to handle output so the queue never fills up
-        procs = [mp.Process(target=match_work, args=(0, 3, 0.25, q,)),
-                 mp.Process(target=match_work, args=(3, 6, 0.25, q,)),
-                 mp.Process(target=match_work, args=(6, 9, 0.25, q,)),
-                 mp.Process(target=match_work, args=(9, 12, 0.25, q,))]
+        procs = [mp.Process(target=match_work, args=(0, 3, 0.5, q,)),
+                 mp.Process(target=match_work, args=(3, 6, 0.5, q,)),
+                 mp.Process(target=match_work, args=(6, 9, 0.5, q,)),
+                 mp.Process(target=match_work, args=(9, 12, 0.5, q,))]
 
         for p in procs:
             p.start()
@@ -145,23 +158,5 @@ if __name__ == '__main__':
             output = q.get()
             print(*output)
 
-    # ========== SERIAL IMPLEMENTATION ==========
-
-    elif args.mp_mode == 0:
-        rt_start, mz_start = 1, 0.005
-        # Also keep track of the param set that produces the "best" mapping
-        min_features, min_rt, min_mz = float('inf'), -1, -1
-
-        for rt_threshold in np.arange(rt_start, 12, 0.5):
-            for mz_threshold in np.arange(mz_start, 0.5, 0.05):
-                features = match_features(fm1, fm2, rt_threshold, mz_threshold)
-                if features.size() < min_features:
-                    min_features = features.size()
-                    min_rt, min_mz = rt_threshold, mz_threshold
-
-                print(rt_threshold, mz_threshold, features.size())
-
-        print(min_rt, min_mz, min_features)
-
-        features = match_features(fm1, fm2, min_rt, min_mz)
-        ms.FeatureXMLFile().store(args.output + '/common.featureXML', features)
+    else:
+        raise ValueError

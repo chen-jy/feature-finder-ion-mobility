@@ -334,14 +334,19 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             max_feature = f1
 
             # Should test to see if this gets rid of satellite features
+            done = False
             for f2 in features2[i]:
                 if similar_features(f1, f2):
                     hp = f2.getConvexHull().getHullPoints()
                     if hull_area(hp) > max_area:
                         max_area = hull_area(hp)
                         max_feature = f2
+                        done = True
 
             features.push_back(max_feature)
+            # No need to map to the right bin if a match was found in the left
+            if done:
+                continue
 
             max_area = hull_area(f1.getConvexHull().getHullPoints())
             max_feature = f1
