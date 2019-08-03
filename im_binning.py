@@ -336,7 +336,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             # Should test to see if this gets rid of satellite features
             done = False
             for f2 in features2[i]:
-                if similar_features(f1, f2):
+                if similar_features(f1, f2, rt_threshold, mz_threshold):
                     hp = f2.getConvexHull().getHullPoints()
                     if hull_area(hp) > max_area:
                         max_area = hull_area(hp)
@@ -352,7 +352,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             max_feature = f1
 
             for f2 in features2[i + 1]:
-                if similar_features(f1, f2):
+                if similar_features(f1, f2, rt_threshold, mz_threshold):
                     hp = f2.getConvexHull().getHullPoints()
                     if hull_area(hp) > max_area:
                         max_area = hull_area(hp)

@@ -67,7 +67,6 @@ def match_work_pool(rt_threshold, mz_threshold, q):
     """
     features = match_features(fm1, fm2, rt_threshold, mz_threshold)
     q.put([rt_threshold, mz_threshold, features.size()])
-    print('done something')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Feature matching threshold finder.')
@@ -106,7 +105,7 @@ if __name__ == '__main__':
     elif args.mp_mode == 1:
         man = mp.Manager()
         q = man.Queue()
-        rt_start, mz_start = 10, 0.01
+        rt_start, mz_start = 3, 0.001
 
         # Doesn't work, since FeatureMaps can't be pickled
         if platform.system() == 'Windows':
@@ -114,8 +113,8 @@ if __name__ == '__main__':
         else:
             pool = mp.Pool(args.nprocs)
 
-        for rt_threshold in np.arange(rt_start, 11, 0.5):
-            for mz_threshold in np.arange(mz_start, 0.05, 0.01):
+        for rt_threshold in np.arange(rt_start, 12, 0.25):
+            for mz_threshold in np.arange(mz_start, 0.25, 0.025):
                 pool.apply_async(match_work_pool, (rt_threshold, mz_threshold, q,))
 
         pool.close()
