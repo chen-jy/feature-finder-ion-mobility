@@ -159,7 +159,7 @@ def compare_features(found_fm, openms_fm, baseline_fm, truth_fm, rt_threshold=5,
     if not brute_force:
         print('Comparing found features to tsv features', flush=True)
     common_newtruth = 0
-    good_features = ms.Feature()
+    good_features = ms.FeatureMap()
 
     for i in range(len(found)):
         j = binary_search_leftmost(truth, 1, found[i][1] - mz_threshold)

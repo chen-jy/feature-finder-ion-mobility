@@ -337,9 +337,9 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             done = False
             for f2 in features2[i]:
                 if similar_features(f1, f2, rt_threshold, mz_threshold):
-                    hp = f2.getConvexHull().getHullPoints()
-                    if hull_area(hp) > max_area:
-                        max_area = hull_area(hp)
+                    hp = hull_area(f2.getConvexHull().getHullPoints())
+                    if hp > max_area:
+                        max_area = hp
                         max_feature = f2
                         done = True
 
@@ -353,9 +353,9 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
             for f2 in features2[i + 1]:
                 if similar_features(f1, f2, rt_threshold, mz_threshold):
-                    hp = f2.getConvexHull().getHullPoints()
-                    if hull_area(hp) > max_area:
-                        max_area = hull_area(hp)
+                    hp = hull_area(f2.getConvexHull().getHullPoints())
+                    if hp > max_area:
+                        max_area = hp
                         max_feature = f2
 
             features.push_back(max_feature)
@@ -446,30 +446,48 @@ if __name__ == "__main__":
     parser.add_argument('--outdir', action='store', required=True, type=str)
     parser.add_argument('--num_bins', action='store', required=True, type=int)
     parser.add_argument('--peak_pick', action='store', required=False)
+    parser.add_argument('--match_only', action='store', required=False)
 
     args = parser.parse_args()
 
     num_bins = args.num_bins
-    peak_pick = False
-    if args.peak_pick is not None:
-        peak_pick = True
+    peak_pick = True if args.peak_pick is not None else False
+    do_matching = True if args.match_only is not None else False
     
-    exp = ms.MSExperiment()
-    print('Loading mzML input file....................', end='', flush=True)
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
-    print('Done')
+    if not do_matching:
+        exp = ms.MSExperiment()
+        print('Loading mzML input file....................', end='', flush=True)
+        ms.MzMLFile().load(args.infile + '.mzML', exp)
+        print('Done')
 
-    spectra = exp.getSpectra()
-    setup_bins(spectra)
+        spectra = exp.getSpectra()
+        setup_bins(spectra)
 
-    for i in range(len(spectra)):
-        spec = spectra[i]
-        # Currently only process MS1 spectra
-        if (spec.getMSLevel() != 1):
-            continue
+        for i in range(len(spectra)):
+            spec = spectra[i]
+            # Currently only process MS1 spectra
+            if (spec.getMSLevel() != 1):
+                continue
 
-        print('Processing MS', end='')
-        print(spec.getMSLevel(), 'RT', spec.getRT())
-        bin_spectrum(spec)
+            print('Processing MS', end='')
+            print(spec.getMSLevel(), 'RT', spec.getRT())
+            bin_spectrum(spec)
 
-    find_features(args.outdir, args.outfile, 'centroided', peak_pick)
+        find_features(args.outdir, args.outfile, 'centroided', peak_pick)
+    else:
+        print('Starting feature matcher')
+        fm1, fm2 = [], []
+
+        for i in range(args.num_bins):
+            fm1.append(ms.FeatureMap())
+            ms.FeatureXMLFile().load(args.outdir + '/' + args.outfile + '-pass1-bin' +
+                                   str(i) + '.featureXML', fm1[i])
+
+        for i in range(args.num_bins + 1):
+            fm2.append(ms.FeatureMap())
+            ms.FeatureXMLFile().load(args.outdir + '/' + args.outfile + '-pass2-bin' +
+                                   str(i) + '.featureXML', fm2[i])
+
+        f = match_features(fm1, fm2, 10, 0.5)
+        f.setUniqueIds()
+        ms.FeatureXMLFile().store(args.outdir + '/' + args.outfile + '-m.featureXML', f)
