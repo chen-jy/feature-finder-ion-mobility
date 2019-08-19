@@ -325,14 +325,14 @@ def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
         f1 = features[i]
         similar = []
 
+        max_area = hull_area(f1.getConvexHull().getHullPoints())
+        max_feature = f1
+
         # Start above f1 to prevent double-matching
         for j in range(i + 1, len(features)):
             f2 = features[j]
             if similar_features(f1, f2, rt_threshold, mz_threshold):
                 similar.append(f2)
-
-        max_area = hull_area(f1.getConvexHull().getHullPoints())
-        max_feature = f1
 
         for f2 in similar:
             hp = hull_area(f2.getConvexHull().getHullPoints())
@@ -368,36 +368,41 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
     for i in range(len(features1)):
         for f1 in features1[i]:
+            similar = []
             max_area = hull_area(f1.getConvexHull().getHullPoints())
             max_feature = f1
 
             # Should test to see if this gets rid of satellite features
-            done = False
             for f2 in features2[i]:
                 if similar_features(f1, f2, rt_threshold, mz_threshold):
-                    hp = hull_area(f2.getConvexHull().getHullPoints())
-                    if hp > max_area:
-                        max_area = hp
-                        max_feature = f2
-                    done = True
+                    similar.append(f2)
+
+            for f2 in similar:
+                hp = hull_area(f2.getConvexHull().getHullPoints())
+                if hp > max_area:
+                    max_area = hp
+                    max_feature = f2
 
             features.push_back(max_feature)
             # No need to map to the right bin if a match was found in the left
-            if done:
+            if len(similar) == 0:
                 continue
 
+            similar = []
             max_area = hull_area(f1.getConvexHull().getHullPoints())
             max_feature = f1
 
             for f2 in features2[i + 1]:
                 if similar_features(f1, f2, rt_threshold, mz_threshold):
-                    hp = hull_area(f2.getConvexHull().getHullPoints())
-                    if hp > max_area:
-                        max_area = hp
-                        max_feature = f2
-                    done = True
+                    similar.append(f2)
 
-            if done:
+            for f2 in similar:
+                hp = hull_area(f2.getConvexHull().getHullPoints())
+                if hp > max_area:
+                    max_area = hp
+                    max_feature = f2
+
+            if len(similar) > 0:
                 features.push_back(max_feature)
 
     return features
@@ -433,6 +438,9 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
                             new_exp)
 
         temp_features = run_ff(new_exp, ff_type)
+        # Added internal matching here
+        temp_features = match_features_internal(temp_features)
+
         temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                   '.featureXML', temp_features)
@@ -457,6 +465,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
                             new_exp)
 
         temp_features = run_ff(new_exp, ff_type)
+        temp_features = match_features_internal(temp_features)
+
         temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                   '.featureXML', temp_features)
