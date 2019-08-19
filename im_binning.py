@@ -306,6 +306,44 @@ def bb_area(box):
     _max = box.maxPosition()
     return abs(_min[0] - _max[0]) * abs(_min[1] * _max[1])
 
+def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
+    """Matches overlapping features within a single bin. Intended to correct satellite
+    features (a tight group of multiple features becomes a single feature: the one in the
+    group with the largest convex hull).
+
+    Args:
+        features (FeatureMap): An OpenMS feature map representing a single bin.
+        rt_threshold (float): The threshold in the RT dimension.
+        mz_threshold (float): The threshold in the m/z dimension.
+
+    Returns:
+        FeatureMap: An OpenMS feature map containing all of the uniquely found features.
+    """
+    matched = ms.FeatureMap()
+
+    for i in range(len(features)):
+        f1 = features[i]
+        similar = []
+
+        # Start above f1 to prevent double-matching
+        for j in range(i + 1, len(features)):
+            f2 = features[j]
+            if similar_features(f1, f2, rt_threshold, mz_threshold):
+                similar.append(f2)
+
+        max_area = hull_area(f1.getConvexHull().getHullPoints())
+        max_feature = f1
+
+        for f2 in similar:
+            hp = hull_area(f2.getConvexHull().getHullPoints())
+            if hp > max_area:
+                max_area = hp
+                max_feature = f2
+
+        matched.push_back(max_feature)
+
+    return matched
+
 def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     """Matches overlapping features from adjacent bins to each other.
     
@@ -316,8 +354,8 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     Args:
         features1 (list<FeatureMap>): A list of OpenMS feature maps from the first pass.
         features2 (list<FeatureMap>): A list of OpenMS feature maps from the second pass.
-        rt_threshold (float): The threshold in the RT dimension. For brute-forcing.
-        mz_threshold (float): The threshold in the m/z dimension. For brute-forcing.
+        rt_threshold (float): The threshold in the RT dimension.
+        mz_threshold (float): The threshold in the m/z dimension.
 
     Returns:
         FeatureMap: An OpenMS feature map containing all of the uniquely found features.
@@ -341,7 +379,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     if hp > max_area:
                         max_area = hp
                         max_feature = f2
-                        done = True
+                    done = True
 
             features.push_back(max_feature)
             # No need to map to the right bin if a match was found in the left
@@ -357,8 +395,10 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     if hp > max_area:
                         max_area = hp
                         max_feature = f2
+                    done = True
 
-            features.push_back(max_feature)
+            if done:
+                features.push_back(max_feature)
 
     return features
 
