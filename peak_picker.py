@@ -33,10 +33,14 @@ def peak_pick(exp, maxima_threshold=3):
     for spec in spectra:
         if spec.getMSLevel() != 1:
             continue
+        print("Peak picking RT", spec.getRT())
 
         spec.sortByPosition()
         num_peaks = spec.size()
+
         new_spec = ms.MSSpectrum()
+        new_spec.setMSLevel(1)
+        new_spec.setRT(spec.getRT())
 
         picked = [False] * num_peaks
 
@@ -47,7 +51,7 @@ def peak_pick(exp, maxima_threshold=3):
             init_intensity = spec[i].getIntensity()
             total_intensity = spec[i].getIntensity()
             total_position = spec[i].getPos()
-            left_picked, right_picked, 0, 0
+            left_picked, right_picked = 0, 0
             low_bound, high_bound = i, i
             
             # Maybe have the option to allow for a single increase in intensity?
@@ -63,7 +67,7 @@ def peak_pick(exp, maxima_threshold=3):
                     low_bound -= 1
 
                     if left_picked >= maxima_threshold and \
-                        spec[j].getIntensity <= init_intensity * 0.10:
+                        spec[j].getIntensity() <= init_intensity * 0.10:
                         break
 
             if left_picked == -1:
@@ -81,7 +85,7 @@ def peak_pick(exp, maxima_threshold=3):
                     high_bound += 1
 
                     if right_picked >= maxima_threshold and \
-                        spec[j].getIntensity <= init_intensity * 0.10:
+                        spec[j].getIntensity() <= init_intensity * 0.10:
                         break
 
             if right_picked == -1:
@@ -101,14 +105,15 @@ def peak_pick(exp, maxima_threshold=3):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Custom peak picker.')
-    parser.add_argument('--in', action='store', required=True, type=str)
-    parser.add_argument('--out', action='store', required=True, type=str)
+    parser.add_argument('--input', action='store', required=True, type=str)
+    parser.add_argument('--output', action='store', required=True, type=str)
 
     args = parser.parse_args()
 
     exp = ms.MSExperiment()
     print('Loading mzML input file....................', end='', flush=True)
-    ms.MzMLFile().load(args.infile + '.mzML', exp)
+    ms.MzMLFile().load(args.input + '.mzML', exp)
     print('Done')
 
     new_exp = peak_pick(exp)
+    ms.MzMLFile().store(args.output + '.mzML', new_exp)

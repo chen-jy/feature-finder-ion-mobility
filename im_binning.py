@@ -321,7 +321,7 @@ def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
     """
     matched = ms.FeatureMap()
 
-    for i in range(len(features)):
+    for i in range(features.size()):
         f1 = features[i]
         similar = []
 
@@ -329,7 +329,7 @@ def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
         max_feature = f1
 
         # Start above f1 to prevent double-matching
-        for j in range(i + 1, len(features)):
+        for j in range(i + 1, features.size()):
             f2 = features[j]
             if similar_features(f1, f2, rt_threshold, mz_threshold):
                 similar.append(f2)
@@ -519,7 +519,7 @@ if __name__ == "__main__":
             if (spec.getMSLevel() != 1):
                 continue
 
-            print('Processing MS', end='')
+            print('Binning MS', end='')
             print(spec.getMSLevel(), 'RT', spec.getRT())
             bin_spectrum(spec)
 
