@@ -3,7 +3,7 @@ import argparse
 import pyopenms as ms
 import numpy as np
 
-def peak_pick(exp, maxima_threshold=10):
+def peak_pick(exp, maxima_threshold=3):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
     features within a bin is not required.
@@ -40,12 +40,7 @@ def peak_pick(exp, maxima_threshold=10):
 
         picked = [False] * num_peaks
 
-        # Left side of the spectrum
-        for i in range(0, maxima_threshold + 1):
-            pass
-
-        # General case; can walk the full threshold left and right
-        for i in range(maxima_threshold + 1, num_peaks - maxima_threshold):
+        for i in range(0, num_peaks):
             if picked[i] == True:
                 continue
 
@@ -74,9 +69,9 @@ def peak_pick(exp, maxima_threshold=10):
             if left_picked == -1:
                 continue
 
-            for j in range(i + 1, num_peaks + 1):
+            for j in range(i + 1, num_peaks):
                 if spec[j].getIntensity() > spec[j - 1].getIntensity():
-                    if right_picked < maxim_threshold:
+                    if right_picked < maxima_threshold:
                         right_picked = -1
                     break
                 else:
@@ -100,9 +95,7 @@ def peak_pick(exp, maxima_threshold=10):
             p.setPos(total_position / (left_picked + right_picked + 1))
             new_spec.push_back(p)
 
-        # Right side of the spectrum
-        for i in range(num_peaks - maxima_threshold, num_peaks):
-            pass
+        new_exp.addSpectrum(new_spec)
 
     return new_exp
 
