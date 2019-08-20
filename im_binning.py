@@ -118,7 +118,13 @@ def run_ff(exp, type):
     features.setUniqueIds()
     return features
 
-def bin_spectrum(spec):
+def within_range(target, x, epsilon):
+    """Checks if <x> is within a distance of <epsilon> of <target>; returns True if this
+    is the case, False otherwise.
+    """
+    return True if target - epsilon <= x <= target + epsilon else False
+
+def bin_spectrum(spec, mz_epsilon=0.001):
     """Makes two passes at binning a single spectrum (with the second pass shifting the
     bins by 50%).
 
@@ -169,7 +175,8 @@ def bin_spectrum(spec):
         running_intensity = 0
 
         for j in range(len(temp_bins[i])):
-            if (temp_bins[i][j][1] == curr_mz):
+            if within_range(curr_mz, temp_bins[i][j][1], mz_epsilon):
+            #if (temp_bins[i][j][1] == curr_mz):
                 num_mz += 1
                 running_intensity += temp_bins[i][j][2]
             else:
@@ -213,7 +220,8 @@ def bin_spectrum(spec):
         running_intensity = 0
 
         for j in range(len(temp_bins2[i])):
-            if (temp_bins2[i][j][1] == curr_mz):
+            if within_range(curr_mz, temp_bins2[i][j][1], mz_epsilon):
+            #if (temp_bins2[i][j][1] == curr_mz):
                 num_mz += 1
                 running_intensity += temp_bins2[i][j][2]
             else:
