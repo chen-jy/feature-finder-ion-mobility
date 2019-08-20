@@ -4,6 +4,7 @@ import pyopenms as ms
 import numpy as np
 
 from operator import itemgetter
+import peak_picker
 
 # Globals and constants
 bins, exps = [], []
@@ -407,7 +408,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
     return features
 
-def find_features(outdir, outfile, ff_type='centroided', pick=False):
+def find_features(outdir, outfile, ff_type='centroided', pick=0):
     """Runs an existing OpenMS feature finder on each of the experiment bins and writes
     the found features to files. Each bin (for each pass) gets its own featureXML and
     mzML files, each pass gets combined files, and the overall experiment gets a matched
@@ -429,8 +430,10 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
     for i in range(num_bins):
         new_exp = ms.MSExperiment()
 
-        if pick:
+        if pick == 1:
             pp.pickExperiment(exps[i], new_exp)
+        elif pick == 2:
+            new_exp = peak_picker.peak_pick(exps[i])
         else:
             new_exp = exps[i]
 
@@ -456,8 +459,10 @@ def find_features(outdir, outfile, ff_type='centroided', pick=False):
     for i in range(num_bins + 1):
         new_exp = ms.MSExperiment()
 
-        if pick:
+        if pick == 1:
             pp.pickExperiment(exps2[i], new_exp)
+        elif pick == 2:
+            new_exp = peak_picker.peak_pick(exps2[i])
         else:
             new_exp = exps2[i]
 
@@ -495,13 +500,12 @@ if __name__ == "__main__":
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
     parser.add_argument('--num_bins', action='store', required=True, type=int)
-    parser.add_argument('--peak_pick', action='store', required=False)
+    parser.add_argument('--peak_pick', action='store', required=True, type=int)
     parser.add_argument('--match_only', action='store', required=False)
 
     args = parser.parse_args()
 
     num_bins = args.num_bins
-    peak_pick = True if args.peak_pick is not None else False
     do_matching = True if args.match_only is not None else False
     
     if not do_matching:
@@ -523,7 +527,7 @@ if __name__ == "__main__":
             print(spec.getMSLevel(), 'RT', spec.getRT())
             bin_spectrum(spec)
 
-        find_features(args.outdir, args.outfile, 'centroided', peak_pick)
+        find_features(args.outdir, args.outfile, 'centroided', args.peak_pick)
     else:
         print('Starting feature matcher')
         fm1, fm2 = [], []
