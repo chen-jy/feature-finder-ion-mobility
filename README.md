@@ -55,14 +55,31 @@ python cmp_features.py --found run1/im --source sample --baseline run2/rt --trut
 python pphr_param_finder.py --input run1/im-pass1-bin1 --output run3 --target 250
 ```
 
-**feature_match**: temp
+**feature_match**: tries to find suitable parameters for running im_binning's feature matcher.
 
-**peak_picker**: temp
+- input*: the input featureXML files (see below for the proper format)
+- output*: the name of the output directory
+- nbins*: the number of bins used (the number of featureXML files per pass)
+- nprocs: the number of processors to use in the work pool implementation
+- mp_mode: `0` to use the serial implementation, `1` to use the work pool implementation, or `2` to use the process implementation
+
+```
+python feature_match.py --input run2/im --output run4 --nbins 10 --nprocs 16 --mp_mode 1
+```
+
+**peak_picker**: a custom peak picker for use on MS data with IM information, intended to replace PeakPickerHiRes.
+
+- input*: the name of the raw mzML file without the file extension
+- output*: the name of the peak-picked mzML file to output to
+
+```
+python peak_picker.py --input sample --output pp_sample
+```
 
 **utils/translate_features**: converts features in .csv format to .featureXML format.
 
 - input*: the name of the input csv file without the file extension
-- output*: the desired name of the output featureXML file, without the file extension
+- output*: the name of the output featureXML file, without the file extension
 
 ```
 python translate_features.py --input sample_csv --output sample_fxml
@@ -70,8 +87,33 @@ python translate_features.py --input sample_csv --output sample_fxml
 
 **utils/csvFilter**: filters data from a .csv file (which has been converted from a .tsv file). Either filters by initial_peak_quality (q) or extracts RT, m/z, and intensity data; i.e. filter performs a "SELECT * FROM sample_csv WHERE q > 0.01" and extract performs a "SELECT RT, m/z, intensity FROM sample_csv".
 
-Usage: csvFilter <csv file> <mode>
+Usage: `csvFilter <csv file> <mode>`
 - mode*: 0 to filter by q or 1 to extract triplet data
 Note: the threshold value can be changed within the source code
+
+**utils/plot_data**: plots 3D data in a scatter plot.
+
+- input*: the name of the input file (each line must have three numbers)
+- output: the name of the output file to save the graph to
+- xlabel: the label of the x-axis
+- ylabel: the label of the y-axis
+- zlabel: the label of the z-axis
+
+```
+python plot_data.py --input scatter --output graph.png --xlabel RT --ylabel mz --zlabel intensity
+```
+
+**utils/tsv_to_csv**: converts a tsv file to a csv file (if a machine does not have Excel to do this).
+
+Usage: `python tsv_to_csv.py < input_tsv > output_csv`
+
+**utils/extract_ms1**: discards all non-MS1 spectra from a raw mzML file.
+
+- input*: the name of the raw mzML file without the file extension
+- output*: the name of the new mzML file to output to
+
+```
+python extract_ms1.py --input sample --output small_sample
+```
 
 **legacy/***: cluster_finder, plane_fitter, and ransac. This is an old approach and is no longer supported or documented.
