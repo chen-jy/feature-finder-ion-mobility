@@ -392,7 +392,8 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     max_area = hp
                     max_feature = f2
 
-            features.push_back(max_feature)
+            if max_feature not in features:
+                features.push_back(max_feature)
             # No need to map to the right bin if a match was found in the left
             if len(similar) == 0:
                 continue
@@ -411,7 +412,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     max_area = hp
                     max_feature = f2
 
-            if len(similar) > 0:
+            if len(similar) > 0 and max_feature not in features:
                 features.push_back(max_feature)
 
     return features
@@ -498,6 +499,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0):
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.featureXML', total_features[1])
 
+    print("Starting cross-bin feature matching. This may take a while.")
     matched_features = match_features(features[0], features[1])
     matched_features.setUniqueIds()
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '.featureXML', matched_features)
