@@ -2,105 +2,158 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#ifdef _WIN32
+#include "include/getopt.h"
+#else
+#include <unistd.h>
+#endif
+
+#define Q_THRESHOLD 0.01
+typedef pair<double, vector<string>*> pair_dvs;
 
 using namespace std;
 
-vector<vector<string>> table(1), filtered;
-vector<string> empty_vec;
+vector<vector<string>> table(1);
 
 int main(int argc, char *argv[]) {
+	// Speed up input
 	cin.sync_with_stdio(0);
 	cin.tie(0);
 
-	// Temporary arg processing until Win 10 gets its full Linux kernel
-	if (argc < 3) {
-		cout << "Usage: csvFilter <csv filename> <mode (0 or 1)>\n";
+	if (argc < 4) {
+		cout << "Usage: csvFilter -i <input csv> -o <output csv> -m <mode> [-a <min rt> -b <max rt>]\n";
 		exit(1);
 	}
 
-	int mode = atoi(argv[2]);
-	if (mode != 0 && mode != 1) {
-		cout << "Error: mode must be 0 (q filtering) or 1 (rt/mz/int filtering)\n";
-		exit(1);
-	}
+	string input_filename, output_filename;
+	int mode;
+	double min_rt, max_rt;
 
-	freopen(argv[1], "r", stdin);
-
-	string line, entry;
-	cin >> line;
-
-	// Get headers
-	stringstream ss1(line);
-	while (ss1.good()) {
-		getline(ss1, line, ',');
-		table[0].push_back(line);
-	}
-
-	// Read in the entire csv first
-	// TODO: can read and filter in one step
-	int i = 1;
-	while (cin >> line) {
-		table.push_back(empty_vec);
-		stringstream ss(line);
-		while (ss.good()) {
-			getline(ss, line, ',');
-			table[i].push_back(line);
+	int c;
+	while ((c = getopt(argc, argv, "i:o:m:a:b:")) != -1) {
+		switch (c) {
+		case 'i':
+			input_filename = string(optarg);
+			break;
+		case 'o':
+			output_filename = string(optarg);
+			break;
+		case 'm':
+			mode = stoi(optarg);
+			if (mode < 0 || mode > 2) {
+				cout << "Error: mode must be 0 (q filtering), 1 (rt/mz/int projection), or 2 (int sorting)\n";
+			}
+			break;
+		case 'a':
+			min_rt = stod(optarg);
+			break;
+		case 'b':
+			max_rt = stod(optarg);
+			break;
+		default:
+			cout << "Usage: csvFilter -i <input csv> -o <output csv> -m <mode> [-a <min rt> -b <max rt>]\n";
+			exit(1);
 		}
-		i++;
 	}
 
-	//cout << "Rows: " << table.size() << "\n";
+	// Redirect standard IO to the correct csv files
+	freopen(input_filename, "r", stdin);
+	freopen(output_filename, "w", stdout);
 
-	// Target column indices
-	int idx_rt = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "RT"));
-	int idx_mz = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "m/z"));
-	int idx_int = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "Intensity"));
-	int idx_q = distance(table[0].begin(), find(table[0].begin(), table[0].end(), "initialPeakQuality"));
+	string input;
+	cin >> input;
 
-	for (i = 1; i < table.size(); i++) {
-		double rt = atof(table[i][idx_rt].c_str());
-		double mz = atof(table[i][idx_mz].c_str());
-		double intensity = atof(table[i][idx_int].c_str());
-		double q = atof(table[i][idx_q].c_str());
+	// Get the headers
+	unordered_map<string, string> headers;
+	int idx = 0;
 
-		// The RT range must be changed for new data
-		if (mode == 0 && 3000 <= rt && rt <= 3100 && q >= 0.01) {
-			filtered.push_back(table[i]);
+	stringstream ss1(input);
+	while (ss1.good()) {
+		getline(ss1, input, ',');
+		table[0].push_back(input);
+		headers.insert({ input, idx++ });
+	}
+
+	// Projection only requires these three columns
+	if (mode == 1) {
+		vector<string> header { "RT", "m/z", "Intensity" };
+		table.push_back(header);
+	}
+
+	// Simultaneously read and filter the input
+	for (int i = 0; cin >> input; i++) {
+		vector<string> line;
+		stringstream ss2(input);
+		while (ss2.good()) {
+			getline(ss2, input, ',');
+			line.push_back(input);
+		}
+
+		if (mode == 0) {
+			double rt = stod(line[headers.find("RT")->second]);
+			double q = stod(line[headers.find("q")->second]);
+
+			if (rt >= min_rt && rt <= max_rt && q >= Q_THRESHOLD) {
+				table.push_back(line);
+			}
 		}
 		else if (mode == 1) {
-			vector<string> row;
-			row.push_back(to_string(rt));
-			row.push_back(to_string(mz));
-			row.push_back(to_string(intensity));
-			filtered.push_back(row);
+			string rt = line[headers.find("RT")->second];
+			string mz = line[headers.find("m/z")->second];
+			string intensity = line[headers.find("Intensity")->second];
+
+			vector<string> projection { rt, mz, intensity };
+			table.push_back(projection);
+		}
+		else {
+			table.push_back(line);
 		}
 	}
 
-	//cout << "Results: " << filtered.size() << "\n";
-
-	// Write results out to a new csv file
-	freopen("filtered.csv", "w", stdout);
-
-	if (mode == 0) {
-		for (i = 0; i < table[0].size(); i++) {
-			cout << table[0][i];
-			if (i < table[0].size() - 1)
-				cout << ",";
+	idx = mode == 1 ? 1 : 0;
+	for (int i = 0; i < table[idx].size(); i++) {
+		cout << table[idx][i];
+		if (i < table[idx].size() - 1) {
+			cout << ',';
 		}
-		cout << "\n";
-	}
-	else if (mode == 1) {
-		cout << "RT,m/z,Intensity\n";
+		cout << '\n';
 	}
 
-	for (i = 0; i < filtered.size(); i++) {
-		for (int j = 0; j < filtered[i].size(); j++) {
-			cout << filtered[i][j];
-			if (j < filtered[i].size() - 1)
-				cout << ",";
+	if (mode == 2) {
+		vector<pair_dvs> sorted;
+		for (int i = 1; i < table.size(); i++) {
+			double intensity = stod(line[headers.find("Intensity")->second]);
+			sorted.push_back({ intensity, &table[i] });
 		}
-		cout << "\n";
+
+		sort(sorted.begin(), sorted.end(), [](const pair_dvs &a, const pair_dvs &b) {
+			return a.first >= b.first;
+		});
+
+		for (int i = 0; i < sorted.size(); i++) {
+			vector<string> *temp = sorted[i].second;
+			for (int j = 0; j < temp->size(); j++) {
+				cout << (*temp)[j];
+				if (j < temp->size() - 1) {
+					cout << ',';
+				}
+			}
+			cout << '\n';
+		}
+	}
+	else {
+		for (int i = idx + 1; i < table.size(); i++) {
+			for (int j = 0; j < table[i].size(); j++) {
+				cout << table[i][j];
+				if (j < table[i].size() - 1) {
+					cout << ',';
+				}
+			}
+			cout << '\n';
+		}
 	}
 
 	return 0;
