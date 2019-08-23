@@ -64,7 +64,8 @@ int main(int argc, char *argv[]) {
 		double intensity = atof(table[i][idx_int].c_str());
 		double q = atof(table[i][idx_q].c_str());
 
-		if (mode == 0 && 3001 <= rt && rt <= 3098 && q >= 0.01) {
+		// The RT range must be changed for new data
+		if (mode == 0 && 3000 <= rt && rt <= 3100 && q >= 0.01) {
 			filtered.push_back(table[i]);
 		}
 		else if (mode == 1) {
