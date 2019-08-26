@@ -5,14 +5,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include <fstream>
+
+#define Q_THRESHOLD 0.01
+
 #ifdef _WIN32
 #include "include/getopt.h"
 #else
 #include <unistd.h>
 #endif
-
-#define Q_THRESHOLD 0.01
-typedef pair<double, vector<string>*> pair_dvs;
 
 using namespace std;
 
@@ -29,11 +30,11 @@ int main(int argc, char *argv[]) {
 	}
 
 	string input_filename, output_filename;
-	int mode;
+	int mode = 0;
 	double min_rt, max_rt;
 
 	int c;
-	while ((c = getopt(argc, argv, "i:o:m:a:b:")) != -1) {
+	while ((c = getopt(argc, argv, "i:o:m:a::b::")) != -1) {
 		switch (c) {
 		case 'i':
 			input_filename = string(optarg);
@@ -44,7 +45,9 @@ int main(int argc, char *argv[]) {
 		case 'm':
 			mode = stoi(optarg);
 			if (mode < 0 || mode > 2) {
-				cout << "Error: mode must be 0 (q filtering), 1 (rt/mz/int projection), or 2 (int sorting)\n";
+				cout << "Error: invalid mode\n";
+				cout << "       <mode> must be 0 (q filtering), 1 (rt/mz/int projection), or 2 (int sorting)\n";
+				exit(2);
 			}
 			break;
 		case 'a':
@@ -59,15 +62,23 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	// Redirect standard IO to the correct csv files
-	freopen(input_filename, "r", stdin);
-	freopen(output_filename, "w", stdout);
+	fstream infile(input_filename.c_str(), ios::in);
+	if (!infile.is_open()) {
+		cout << "Error: unable to open input csv file\n";
+		exit(2);
+	}
+
+	fstream outfile(output_filename.c_str(), ios::out | ios::trunc);
+	if (!outfile.is_open()) {
+		cout << "Error: unable to open output csv file\n";
+		exit(2);
+	}
 
 	string input;
-	cin >> input;
+	infile >> input;
 
 	// Get the headers
-	unordered_map<string, string> headers;
+	unordered_map<string, int> headers;
 	int idx = 0;
 
 	stringstream ss1(input);
@@ -79,12 +90,13 @@ int main(int argc, char *argv[]) {
 
 	// Projection only requires these three columns
 	if (mode == 1) {
-		vector<string> header { "RT", "m/z", "Intensity" };
+		vector<string> header{ "RT", "m/z", "Intensity" };
 		table.push_back(header);
 	}
 
 	// Simultaneously read and filter the input
-	for (int i = 0; cin >> input; i++) {
+	cout << "Processing input...";
+	for (int i = 0; infile >> input; i++) {
 		vector<string> line;
 		stringstream ss2(input);
 		while (ss2.good()) {
@@ -94,7 +106,7 @@ int main(int argc, char *argv[]) {
 
 		if (mode == 0) {
 			double rt = stod(line[headers.find("RT")->second]);
-			double q = stod(line[headers.find("q")->second]);
+			double q = stod(line[headers.find("initialPeakQuality")->second]);
 
 			if (rt >= min_rt && rt <= max_rt && q >= Q_THRESHOLD) {
 				table.push_back(line);
@@ -105,7 +117,7 @@ int main(int argc, char *argv[]) {
 			string mz = line[headers.find("m/z")->second];
 			string intensity = line[headers.find("Intensity")->second];
 
-			vector<string> projection { rt, mz, intensity };
+			vector<string> projection{ rt, mz, intensity };
 			table.push_back(projection);
 		}
 		else {
@@ -115,46 +127,50 @@ int main(int argc, char *argv[]) {
 
 	idx = mode == 1 ? 1 : 0;
 	for (int i = 0; i < table[idx].size(); i++) {
-		cout << table[idx][i];
+		outfile << table[idx][i];
 		if (i < table[idx].size() - 1) {
-			cout << ',';
+			outfile << ',';
 		}
-		cout << '\n';
 	}
+	outfile << '\n';
 
 	if (mode == 2) {
-		vector<pair_dvs> sorted;
+		vector<pair<double, vector<string> *>> sorted;
 		for (int i = 1; i < table.size(); i++) {
-			double intensity = stod(line[headers.find("Intensity")->second]);
+			double intensity = stod(table[i][headers.find("Intensity")->second]);
 			sorted.push_back({ intensity, &table[i] });
 		}
 
-		sort(sorted.begin(), sorted.end(), [](const pair_dvs &a, const pair_dvs &b) {
-			return a.first >= b.first;
+		sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b) {
+			return b.first < a.first;
 		});
 
 		for (int i = 0; i < sorted.size(); i++) {
 			vector<string> *temp = sorted[i].second;
 			for (int j = 0; j < temp->size(); j++) {
-				cout << (*temp)[j];
+				outfile << (*temp)[j];
 				if (j < temp->size() - 1) {
-					cout << ',';
+					outfile << ',';
 				}
 			}
-			cout << '\n';
+			outfile << '\n';
 		}
 	}
 	else {
 		for (int i = idx + 1; i < table.size(); i++) {
 			for (int j = 0; j < table[i].size(); j++) {
-				cout << table[i][j];
+				outfile << table[i][j];
 				if (j < table[i].size() - 1) {
-					cout << ',';
+					outfile << ',';
 				}
 			}
-			cout << '\n';
+			outfile << '\n';
 		}
 	}
+
+	cout << "Done\n";
+	infile.close();
+	outfile.close();
 
 	return 0;
 }
