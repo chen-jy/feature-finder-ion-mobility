@@ -3,17 +3,17 @@ import argparse
 import pyopenms as ms
 import numpy as np
 
-def peak_pick(exp, maxima_threshold=3):
+def peak_pick(exp, maxima_threshold=3, window_size=0.013, strict=True):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
     features within a bin is not required.
 
-    1. Peaks are sorted.
+    1. Peaks are sorted by m/z.
     2. A boolean array is created with a False for every existing peak.
     3. Iterate forward and find a peak with the local highest intensity.
         - Need to check further forward (more than just the next peak)
-    4. Go left and right (within a window) until the current peak is less than 5-10% of
-        the most intense local peak.
+    4. Go left and right (within a window) until the current peak is less than 10% of the
+        most intense local peak.
     5. Mark all of the peaks as True.
     6. Create a new peak with its intensity being the sum of the intensities of the newly
         marked peaks and its m/z being a weighted average.
@@ -22,6 +22,10 @@ def peak_pick(exp, maxima_threshold=3):
         exp (MSExperiment): The OpenMS experiment to be peak picked.
         maxima_threshold (int): The required number of decreasing/non-increasing peaks to
             either side of a peak in order to be considered a local maximum.
+        window_size (float): The maximum m/z distance left/right from the initial peak to
+            consider.
+        strict (bool): If true, peaks must be non-increasing from the initial peak.
+            Otherwise, a single peak is allowed to break this rule.
 
     Returns:
         MSExperiment: An OpenMS experiment corresponding to the input, but peak-picked.
@@ -50,6 +54,7 @@ def peak_pick(exp, maxima_threshold=3):
 
             init_intensity = spec[i].getIntensity()
             total_intensity = spec[i].getIntensity()
+            init_position = spec[i].getPos()
             total_position = spec[i].getPos()
             left_picked, right_picked = 0, 0
             low_bound, high_bound = i, i
@@ -61,6 +66,9 @@ def peak_pick(exp, maxima_threshold=3):
                         left_picked = -1
                     break
                 else:
+                    if init_position - spec[j].getPos() > window_size:
+                        break
+
                     total_intensity += spec[j].getIntensity()
                     total_position += spec[j].getPos()
                     left_picked += 1
@@ -79,6 +87,9 @@ def peak_pick(exp, maxima_threshold=3):
                         right_picked = -1
                     break
                 else:
+                    if spec[j].getPos() - init_position > window_size:
+                        break
+
                     total_intensity += spec[j].getIntensity()
                     total_position += spec[j].getPos()
                     right_picked += 1
