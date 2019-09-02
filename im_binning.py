@@ -349,7 +349,8 @@ def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
                 max_area = hp
                 max_feature = f2
 
-        matched.push_back(max_feature)
+        if max_feature not in matched:
+            matched.push_back(max_feature)
 
     return matched
 
@@ -395,7 +396,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             if max_feature not in features:
                 features.push_back(max_feature)
             # No need to map to the right bin if a match was found in the left
-            if len(similar) == 0:
+            if len(similar) > 0:
                 continue
 
             similar = []
@@ -417,7 +418,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
     return features
 
-def find_features(outdir, outfile, ff_type='centroided', pick=0):
+def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
     """Runs an existing OpenMS feature finder on each of the experiment bins and writes
     the found features to files. Each bin (for each pass) gets its own featureXML and
     mzML files, each pass gets combined files, and the overall experiment gets a matched
@@ -430,7 +431,6 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0):
         pick (boolean): Determines whether or not to pick peak the data before running
             the feature finder.
     """
-
     pp = ms.PeakPickerHiRes()
     total_exp = [ms.MSExperiment(), ms.MSExperiment()]
     features = [[], []]
@@ -451,7 +451,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0):
 
         temp_features = run_ff(new_exp, ff_type)
         # Added internal matching here
-        temp_features = match_features_internal(temp_features)
+        if imatch == 1:
+            temp_features = match_features_internal(temp_features)
 
         temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
@@ -479,7 +480,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0):
                             new_exp)
 
         temp_features = run_ff(new_exp, ff_type)
-        temp_features = match_features_internal(temp_features)
+        if imatch == 1:
+            temp_features = match_features_internal(temp_features)
 
         temp_features.setUniqueIds()
         ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
@@ -510,6 +512,8 @@ if __name__ == "__main__":
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
     parser.add_argument('--num_bins', action='store', required=True, type=int)
+    parser.add_argument('--mz_eps', action='store', required=True, type=float)
+    parser.add_argument('--int_match', action='store', required=True, type=int)
     parser.add_argument('--peak_pick', action='store', required=True, type=int)
     parser.add_argument('--match_only', action='store', required=False)
 
@@ -535,9 +539,10 @@ if __name__ == "__main__":
 
             print('Binning MS', end='')
             print(spec.getMSLevel(), 'RT', spec.getRT())
-            bin_spectrum(spec)
+            bin_spectrum(spec, args.mz_eps)
 
-        find_features(args.outdir, args.outfile, 'centroided', args.peak_pick)
+        find_features(args.outdir, args.outfile, 'centroided', args.peak_pick,
+                      args.int_match)
     else:
         print('Starting feature matcher')
         fm1, fm2 = [], []
