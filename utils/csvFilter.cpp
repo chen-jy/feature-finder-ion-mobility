@@ -1,19 +1,18 @@
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <fstream>
-
-#define Q_THRESHOLD 0.01
-
 #ifdef _WIN32
 #include "include/getopt.h"
 #else
 #include <unistd.h>
 #endif
+
+#define Q_THRESHOLD 0.01
 
 using namespace std;
 
@@ -31,7 +30,7 @@ int main(int argc, char *argv[]) {
 
 	string input_filename, output_filename;
 	int mode = 0;
-	double min_rt, max_rt;
+	double min_rt = -1, max_rt = -1;
 
 	int c;
 	while ((c = getopt(argc, argv, "i:o:m:a::b::")) != -1) {
@@ -72,6 +71,11 @@ int main(int argc, char *argv[]) {
 	if (!outfile.is_open()) {
 		cout << "Error: unable to open output csv file\n";
 		exit(2);
+	}
+
+	if (mode == 0 && (min_rt == -1 || max_rt == -1)) {
+		cout << "Error: filtering requires RT bounds\n";
+		exit(3);
 	}
 
 	string input;
