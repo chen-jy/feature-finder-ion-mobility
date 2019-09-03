@@ -4,16 +4,17 @@ import pyopenms as ms
 import numpy as np
 
 # Try window_size=0.02
-def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
+def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=True):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
-    features within a bin is not required.
+    features within a bin is not required, and erroneous features are minimized.
 
-    1. Peaks are sorted by m/z.
-    2. A boolean array is created with a False for every existing peak.
+    Algorithm:
+    1. Sort peaks by increasing m/z.
+    2. Create a boolean array with a False for every peak.
     3. Iterate forward and find a peak with the local highest intensity.
-        - Need to check further forward (more than just the next peak)
-    4. Go left and right (within a window) until the current peak is less than 10% of the
+        - Also check further forward (more than just the next peak)
+    4. Go left and right (within a window) until the current peak is less than x% of the
         most intense local peak.
     5. Mark all of the peaks as True.
     6. Create a new peak with its intensity being the sum of the intensities of the newly
@@ -21,10 +22,12 @@ def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
 
     Args:
         exp (MSExperiment): The OpenMS experiment to be peak picked.
-        maxima_threshold (int): The required number of decreasing/non-increasing peaks to
-            either side of a peak in order to be considered a local maximum.
+        min_req (int): The required number of decreasing/non-increasing peaks to either
+            side of a peak in order to be considered a local maximum.
         window_size (float): The maximum m/z distance left/right from the initial peak to
             consider.
+        small_peak (float): The multiplier to use when deciding if a peak is x% smaller
+            than the initial peak.
         strict (bool): If true, peaks must be non-increasing from the initial peak.
             Otherwise, a single peak is allowed to break this rule.
 
@@ -49,7 +52,7 @@ def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
 
         picked = [False] * num_peaks
 
-        for i in range(0, num_peaks):
+        for i in range(num_peaks):
             if picked[i]:
                 continue
 
@@ -60,10 +63,15 @@ def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
             left_picked, right_picked = 0, 0
             low_bound, high_bound = i, i
 
-            # Walk left
             # Flag for a single increase in intensity (when strict=False)
             sflag = False
+            threshold = min_req
+            
+            # Walk left
             for j in range(i - 1, -1, -1):
+                #if picked[j]:
+                #    break
+
                 if abs(spec[j].getPos() - init_position) > window_size:
                     break
 
@@ -71,22 +79,29 @@ def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
                     if strict or sflag:
                         break
                     sflag = True
+                    # Need to end the series with a lower peak, so "increase min_req"
+                    threshold += 1
 
                 total_intensity += spec[j].getIntensity()
                 total_position += spec[j].getPos()
                 left_picked += 1
                 low_bound -= 1
 
-                if left_picked >= maxima_threshold and \
-                    spec[j].getIntensity() <= init_intensity * 0.1:
+                if left_picked >= threshold and \
+                    spec[j].getIntensity() <= init_intensity * small_peak:
                     break
 
-            if left_picked < maxima_threshold:
+            if left_picked < threshold:
                 continue
 
-            # Walk right
             sflag = False
+            threshold = min_req
+
+            # Walk right
             for j in range(i + 1, num_peaks):
+                #if picked[j]:
+                #    break
+
                 if abs(spec[j].getPos() - init_position) > window_size:
                     break
 
@@ -94,17 +109,18 @@ def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
                     if strict or sflag:
                         break
                     sflag = True
+                    threshold += 1
 
                 total_intensity += spec[j].getIntensity()
                 total_position += spec[j].getPos()
                 right_picked += 1
                 high_bound += 1
 
-                if right_picked >= maxima_threshold and \
-                    spec[j].getIntensity() <= init_intensity * 0.1:
+                if right_picked >= threshold and \
+                    spec[j].getIntensity() <= init_intensity * small_peak:
                     break
 
-            if right_picked < maxima_threshold:
+            if right_picked < threshold:
                 continue
 
             for j in range(low_bound, high_bound + 1):
