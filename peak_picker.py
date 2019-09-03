@@ -3,7 +3,8 @@ import argparse
 import pyopenms as ms
 import numpy as np
 
-def peak_pick(exp, maxima_threshold=3, window_size=0.013, strict=True):
+# Try window_size=0.02
+def peak_pick(exp, maxima_threshold=3, window_size=float(inf), strict=True):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
     features within a bin is not required.
@@ -49,7 +50,7 @@ def peak_pick(exp, maxima_threshold=3, window_size=0.013, strict=True):
         picked = [False] * num_peaks
 
         for i in range(0, num_peaks):
-            if picked[i] == True:
+            if picked[i]:
                 continue
 
             init_intensity = spec[i].getIntensity()
@@ -58,48 +59,52 @@ def peak_pick(exp, maxima_threshold=3, window_size=0.013, strict=True):
             total_position = spec[i].getPos()
             left_picked, right_picked = 0, 0
             low_bound, high_bound = i, i
-            
-            # Maybe have the option to allow for a single increase in intensity?
+
+            # Walk left
+            # Flag for a single increase in intensity (when strict=False)
+            sflag = False
             for j in range(i - 1, -1, -1):
-                if spec[j].getIntensity() > spec[j + 1].getIntensity():
-                    if left_picked < maxima_threshold:
-                        left_picked = -1
+                if abs(spec[j].getPos() - init_position) > window_size:
                     break
-                else:
-                    if init_position - spec[j].getPos() > window_size:
+
+                if spec[j].getIntensity() > spec[j + 1].getIntensity():
+                    if strict or sflag:
                         break
+                    sflag = True
 
-                    total_intensity += spec[j].getIntensity()
-                    total_position += spec[j].getPos()
-                    left_picked += 1
-                    low_bound -= 1
+                total_intensity += spec[j].getIntensity()
+                total_position += spec[j].getPos()
+                left_picked += 1
+                low_bound -= 1
 
-                    if left_picked >= maxima_threshold and \
-                        spec[j].getIntensity() <= init_intensity * 0.10:
-                        break
+                if left_picked >= maxima_threshold and \
+                    spec[j].getIntensity() <= init_intensity * 0.1:
+                    break
 
-            if left_picked == -1:
+            if left_picked < maxima_threshold:
                 continue
 
+            # Walk right
+            sflag = False
             for j in range(i + 1, num_peaks):
-                if spec[j].getIntensity() > spec[j - 1].getIntensity():
-                    if right_picked < maxima_threshold:
-                        right_picked = -1
+                if abs(spec[j].getPos() - init_position) > window_size:
                     break
-                else:
-                    if spec[j].getPos() - init_position > window_size:
+
+                if spec[j].getIntensity() > spec[j - 1].getIntensity():
+                    if strict or sflag:
                         break
+                    sflag = True
 
-                    total_intensity += spec[j].getIntensity()
-                    total_position += spec[j].getPos()
-                    right_picked += 1
-                    high_bound += 1
+                total_intensity += spec[j].getIntensity()
+                total_position += spec[j].getPos()
+                right_picked += 1
+                high_bound += 1
 
-                    if right_picked >= maxima_threshold and \
-                        spec[j].getIntensity() <= init_intensity * 0.10:
-                        break
+                if right_picked >= maxima_threshold and \
+                    spec[j].getIntensity() <= init_intensity * 0.1:
+                    break
 
-            if right_picked == -1:
+            if right_picked < maxima_threshold:
                 continue
 
             for j in range(low_bound, high_bound + 1):
