@@ -4,7 +4,8 @@ import pyopenms as ms
 import numpy as np
 
 # Try window_size=0.02
-def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=True):
+def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=True,
+              sequential=True):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
     features within a bin is not required, and erroneous features are minimized.
@@ -12,13 +13,19 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
     Algorithm:
     1. Sort peaks by increasing m/z.
     2. Create a boolean array with a False for every peak.
-    3. Iterate forward and find a peak with the local highest intensity.
-        - Also check further forward (more than just the next peak)
-    4. Go left and right (within a window) until the current peak is less than x% of the
-        most intense local peak.
-    5. Mark all of the peaks as True.
-    6. Create a new peak with its intensity being the sum of the intensities of the newly
+    3. For each peak, go left and right (within a window) until the current peak is less
+        than x% of the most intense local peak.
+    4. Mark all of the peaks as True.
+    5. Create a new peak with its intensity being the sum of the intensities of the newly
         marked peaks and its m/z being a weighted average.
+
+    Alternate algorithm (for sequential=False):
+    1. Sort peaks by increasing m/z.
+    2. Create a lookup table, storing each peak's intensity and index in the m/z-sorted
+        spectrum.
+    3. Sort the lookup table by the peaks' intensities, descending.
+    4. Continue the normal algorithm, but instead of iterating through peaks in the order
+        of the m/z-sorted spectrum, go in the order of the intensity-sorted lookup table.
 
     Args:
         exp (MSExperiment): The OpenMS experiment to be peak picked.
@@ -30,6 +37,9 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
             than the initial peak.
         strict (bool): If true, peaks must be non-increasing from the initial peak.
             Otherwise, a single peak is allowed to break this rule.
+        sequential (bool): If true, peaks are iterated through left-to-right in the
+            sorted m/z spectrum. Otherwise, they are iterated through by decreasing
+            intensity.
 
     Returns:
         MSExperiment: An OpenMS experiment corresponding to the input, but peak-picked.
@@ -42,9 +52,16 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
         if spec.getMSLevel() != 1:
             continue
         print("Peak picking RT", spec.getRT())
-
-        spec.sortByPosition()
+        
         num_peaks = spec.size()
+        spec.sortByPosition()
+        peak_idx = []
+
+        if not sequential:
+            for i in range(num_peaks):
+                peak_idx.append([spec[i].getIntensity(), i])
+
+            peak_idx = sorted(peak_idx, reverse=True)
 
         new_spec = ms.MSSpectrum()
         new_spec.setMSLevel(1)
@@ -52,7 +69,8 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
 
         picked = [False] * num_peaks
 
-        for i in range(num_peaks):
+        for idx in range(num_peaks):
+            i = idx if sequential else peak_idx[idx][1]
             if picked[i]:
                 continue
 
@@ -76,7 +94,8 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
                     break
 
                 if spec[j].getIntensity() > spec[j + 1].getIntensity():
-                    if strict or sflag:
+                    # Should not start with immediate "abnormal" peaks (3rd condition)
+                    if strict or sflag or j + 1 == i:
                         break
                     sflag = True
                     # Need to end the series with a lower peak, so "increase min_req"
@@ -106,7 +125,7 @@ def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=Tru
                     break
 
                 if spec[j].getIntensity() > spec[j - 1].getIntensity():
-                    if strict or sflag:
+                    if strict or sflag or j - 1 == i:
                         break
                     sflag = True
                     threshold += 1
