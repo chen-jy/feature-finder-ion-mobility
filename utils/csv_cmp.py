@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     for i in range(1, len(csv_list1)):
         points1.append([float(x) for x in csv_list1[i]])
-        points1[i].append(False)
+        points1[i - 1].append(False)
 
     csv_list2, points2 = [], []
     with open(args.tsv + '.csv', 'r') as f:
@@ -68,8 +68,8 @@ if __name__ == '__main__':
     with open(args.output + '.csv', 'w') as f:
         f.write('RT,m/z,Intensity\n')
         for i in range(len(points1)):
-            f.write(str.format('{0},{1},{2} {3}', points1[i][0], points1[i][1],
+            f.write(str.format('{0},{1},{2}    {3}\n', points1[i][0], points1[i][1],
                                points1[i][2],
-                               'Not found' if points[i][3] == False else ''))
+                               '[FOUND]' if points1[i][3] else ''))
 
     print('Done.')

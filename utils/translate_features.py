@@ -52,8 +52,9 @@ if __name__ == '__main__':
 
             for i in range(features.size()):
                 if i % 50 == 0:
-                    print('Processing feature', i, 'of', features.size())
+                    print('Processing feature', i + 1, 'of', features.size())
 
-                f.write(str.format('{0},{1},{2}\n', data_points[i][0], data_points[i][1], data_points[i][2]))
+                f.write(str.format('{0},{1},{2}\n', data_points[i][0], data_points[i][1],
+                                   data_points[i][2]))
 
         print('Done.')
