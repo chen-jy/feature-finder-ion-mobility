@@ -4,7 +4,7 @@ import pyopenms as ms
 import numpy as np
 
 # Try window_size=0.02
-def peak_pick(exp, min_req=3, window_size=float(inf), small_peak=0.1, strict=True,
+def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=True,
               sequential=True):
     """A custom peak picker for use with im_binning, since PeakPickerHiRes always
     destroys the data. The idea is to get rid of satellite peaks so that matching
@@ -166,5 +166,6 @@ if __name__ == '__main__':
     ms.MzMLFile().load(args.input + '.mzML', exp)
     print('Done')
 
-    new_exp = peak_pick(exp)
+    new_exp = peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1,
+                        strict=True, sequential=True)
     ms.MzMLFile().store(args.output + '.mzML', new_exp)

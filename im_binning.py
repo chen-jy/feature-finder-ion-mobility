@@ -418,6 +418,22 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
     return features
 
+def has_peaks(exp):
+    """Checks if any of the spectra in an experiment have peaks.
+
+    Args:
+        exp (MSExperiment): An OpenMS experiment containing the spectra to check.
+
+    Returns:
+        bool: True if any of the spectra have peaks; False otherwise.
+    """
+    spectra = exp.getSpectra()
+    for spec in spectra:
+        if spec.size() > 0:
+            return True
+
+    return False
+
 def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
     """Runs an existing OpenMS feature finder on each of the experiment bins and writes
     the found features to files. Each bin (for each pass) gets its own featureXML and
@@ -449,7 +465,9 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) + '.mzML',
                             new_exp)
 
-        temp_features = run_ff(new_exp, ff_type)
+        temp_features = ms.FeatureMap()
+        if has_peaks(new_exp):
+            temp_features = run_ff(new_exp, ff_type)
         # Added internal matching here
         if imatch == 1:
             temp_features = match_features_internal(temp_features)
@@ -479,7 +497,9 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
         ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) + '.mzML',
                             new_exp)
 
-        temp_features = run_ff(new_exp, ff_type)
+        temp_features = ms.FeatureMap()
+        if has_peaks(new_exp):
+            temp_features = run_ff(new_exp, ff_type)
         if imatch == 1:
             temp_features = match_features_internal(temp_features)
 
