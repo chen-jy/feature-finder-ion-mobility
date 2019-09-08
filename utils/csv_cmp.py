@@ -47,7 +47,6 @@ if __name__ == '__main__':
 
         for i in range(1, len(csv_list1)):
             points1.append([float(x) for x in csv_list1[i]])
-            points1[i - 1].append(False)
 
         csv_list2, points2 = [], []
         with open(args.tsv + '.csv', 'r') as f:
@@ -56,6 +55,7 @@ if __name__ == '__main__':
 
         for i in range(1, len(csv_list2)):
             points2.append([float(x) for x in csv_list2[i]])
+            points2[i - 1].append(False)
 
         # Sort by m/z instead of intensity (so we can binary search)
         points2 = sorted(points2, key=itemgetter(1))
@@ -71,18 +71,19 @@ if __name__ == '__main__':
 
             for j in range(idx, len(points2)):
                 if similar_features(points1[i], points2[j]):
-                    points1[i][3] = True
+                    points2[j][3] = True
                     num_common += 1
-                    break
                 if points2[j][1] > points1[i][1] + 0.01:
                     break
 
+        points2 = sorted(points2, key=itemgetter(2), reverse=True)
+
         with open(args.output + '.csv', 'w') as f:
             f.write('RT,m/z,Intensity\n')
-            for i in range(len(points1)):
-                f.write(str.format('{0},{1},{2}    {3}\n', points1[i][0], points1[i][1],
-                                   points1[i][2],
-                                   '[FOUND]' if points1[i][3] else ''))
+            for i in range(len(points2)):
+                f.write(str.format('{0},{1},{2}    {3}\n', points2[i][0], points2[i][1],
+                                   points2[i][2],
+                                   '[FOUND]' if points2[i][3] else ''))
 
         print(num_common, 'features common.')
 
@@ -122,7 +123,6 @@ if __name__ == '__main__':
                 if similar_features(points[j], found_features[k]):
                     common_features.push_back(found_features[k])
                     num_common += 1
-                    break
                 if points[j][1] > found_features[k].getMZ() + 0.01:
                     break
 
