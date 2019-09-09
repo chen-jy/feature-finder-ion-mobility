@@ -6,6 +6,18 @@ import pyopenms as ms
 from operator import itemgetter
 from math import floor
 
+# Snippet from cmp_features
+def binary_search_leftmost(arr, idx, target):
+    l, r = 0, len(arr)
+    while l < r:
+        m = floor((l + r) / 2)
+        if arr[m][idx] < target:
+            l = m + 1
+        else:
+            r = m
+    # Check this statement
+    return l if l < len(arr) else l - 1
+
 # Modified snippet from im_binning
 def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
     if isinstance(feature1, list) and isinstance(feature2, list):
@@ -19,16 +31,13 @@ def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
 
     return False
 
-# Snippet from cmp_features
-def binary_search_leftmost(arr, idx, target):
-    l, r = 0, len(arr)
-    while l < r:
-        m = floor((l + r) / 2)
-        if arr[m][idx] < target:
-            l = m + 1
-        else:
-            r = m
-    return l if l < len(arr) else l - 1
+# Snippet from im_binning
+def hull_area(hull):
+    area = 0.0
+    for i in range(len(hull)):
+        area += hull[i][0] * hull[(i + 1) % len(hull)][1]
+        area -= hull[i][1] * hull[(i + 1) % len(hull)][0]
+    return abs(area) / 2.0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='csv feature comparison by intensity.')
@@ -91,12 +100,6 @@ if __name__ == '__main__':
         found_features = ms.FeatureMap()
         ms.FeatureXMLFile().load(args.found, found_features)
 
-        dict = []
-        for i in range(found_features.size()):
-            dict.append([found_features[i].getIntensity(), i])
-
-        dict = sorted(dict, key=itemgetter(0), reverse=True)
-
         csv_list, points = [], []
         with open(args.tsv + '.csv', 'r') as f:
             reader = csv.reader(f)
@@ -105,27 +108,50 @@ if __name__ == '__main__':
         for i in range(1, len(csv_list)):
             points.append([float(x) for x in csv_list[i]])
 
-        points = sorted(points, key=itemgetter(1))
-
-        common_features = ms.FeatureMap()
+        common_features, missing_features, all_features = ms.FeatureMap(), \
+            ms.FeatureMap(), ms.FeatureMap()
 
         print('Beginning comparisons')
         num_common = 0
 
-        for i in range(len(dict)):
+        for i in range(len(points)):
             if i % 50 == 0:
-                print('Processing feature', i + 1, 'of', len(dict))
+                print('Processing feature', i + 1, 'of', len(points))
 
-            k = dict[i][1]
-            idx = binary_search_leftmost(points, 1, found_features[k].getMZ() - 0.01)
+            found = False
+            similar = []
 
-            for j in range(idx, len(points)):
-                if similar_features(points[j], found_features[k]):
-                    common_features.push_back(found_features[k])
-                    num_common += 1
-                if points[j][1] > found_features[k].getMZ() + 0.01:
-                    break
+            for j in range(found_features.size()):
+                if similar_features(points[i], found_features[j]):
+                    found = True
+                    similar.append(found_features[j])
+
+            if found:
+                max_feature = similar[0]
+                max_area = hull_area(max_feature.getConvexHull().getHullPoints())
+
+                for f in similar:
+                    ha = hull_area(f.getConvexHull().getHullPoints())
+                    if ha > max_area:
+                        max_area = ha
+                        max_feature = f
+
+                common_features.push_back(max_feature)
+                num_common += 1
+            else:
+                f = ms.Feature()
+                f.setRT(points[i][0])
+                f.setMZ(points[i][1])
+                f.setIntensity(points[i][2])
+
+                missing_features.push_back(f)
+                all_features.push_back(f)
+
+        missing_features.setUniqueIds()
+        ms.FeatureXMLFile().store(args.output + '-missing.featureXML', missing_features)
+        all_features.setUniqueIds()
+        ms.FeatureXMLFile().store(args.output + '-all.featureXML', all_features)
 
         common_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '.featureXML', common_features)
+        ms.FeatureXMLFile().store(args.output + '-common.featureXML', common_features)
         print(num_common, 'features common.')
