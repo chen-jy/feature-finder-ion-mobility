@@ -66,23 +66,17 @@ if __name__ == '__main__':
             points2.append([float(x) for x in csv_list2[i]])
             points2[i - 1].append(False)
 
-        # Sort by m/z instead of intensity (so we can binary search)
-        points2 = sorted(points2, key=itemgetter(1))
-
-        # Begin comparison
         print('Beginning comparisons')
         num_common = 0
 
-        for i in range(len(points1)):
+        for i in range(len(points2)):
             if i % 50 == 0:
-                print('Processing feature', i + 1, 'of', len(points1))
-            idx = binary_search_leftmost(points2, 1, points1[i][1] - 0.01)
+                print('Processing feature', i + 1, 'of', len(points2))
 
-            for j in range(idx, len(points2)):
-                if similar_features(points1[i], points2[j]):
-                    points2[j][3] = True
+            for j in range(len(points1)):
+                if similar_features(points2[i], points1[j]) and points2[i][3] == False:
+                    points2[i][3] = True
                     num_common += 1
-                if points2[j][1] > points1[i][1] + 0.01:
                     break
 
         points2 = sorted(points2, key=itemgetter(2), reverse=True)
