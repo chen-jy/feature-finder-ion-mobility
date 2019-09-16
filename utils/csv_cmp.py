@@ -131,6 +131,7 @@ if __name__ == '__main__':
                         max_feature = f
 
                 common_features.push_back(max_feature)
+                all_features.push_back(max_feature)
                 num_common += 1
             else:
                 f = ms.Feature()
