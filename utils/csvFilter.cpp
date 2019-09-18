@@ -94,6 +94,7 @@ int main(int argc, char *argv[]) {
 
 	// Projection only requires these three columns
 	if (mode == 1) {
+		// aggr_Peak_Area for the precursor intensity?
 		vector<string> header{ "RT", "m/z", "Intensity" };
 		table.push_back(header);
 	}
@@ -110,9 +111,11 @@ int main(int argc, char *argv[]) {
 
 		if (mode == 0) {
 			double rt = stod(line[headers.find("RT")->second]);
-			double q = stod(line[headers.find("initialPeakQuality")->second]);
+			// Use initialPeakQuality on non-scored tsv files
+			double q = stod(line[headers.find("q_value")->second]);
+			double d = stoi(line[headers.find("decoy")->second]);
 
-			if (rt >= min_rt && rt <= max_rt && q >= Q_THRESHOLD) {
+			if (rt >= min_rt && rt <= max_rt && q >= Q_THRESHOLD && !d) {
 				table.push_back(line);
 			}
 		}
