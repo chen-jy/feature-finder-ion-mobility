@@ -77,7 +77,6 @@ def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=T
             init_intensity = spec[i].getIntensity()
             total_intensity = spec[i].getIntensity()
             init_position = spec[i].getPos()
-            total_position = spec[i].getPos()
             left_picked, right_picked = 0, 0
             low_bound, high_bound = i, i
 
@@ -102,7 +101,6 @@ def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=T
                     threshold += 1
 
                 total_intensity += spec[j].getIntensity()
-                total_position += spec[j].getPos()
                 left_picked += 1
                 low_bound -= 1
 
@@ -131,7 +129,6 @@ def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=T
                     threshold += 1
 
                 total_intensity += spec[j].getIntensity()
-                total_position += spec[j].getPos()
                 right_picked += 1
                 high_bound += 1
 
@@ -142,12 +139,15 @@ def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=T
             if right_picked < threshold:
                 continue
 
+            total_position = 0
             for j in range(low_bound, high_bound + 1):
                 picked[j] = True
+                total_position += spec[j].getPos() * (spec[j].getIntensity /
+                                                      total_intensity)
 
             p = ms.Peak1D()
             p.setIntensity(total_intensity)
-            p.setPos(total_position / (left_picked + right_picked + 1))
+            p.setPos(total_position)
             new_spec.push_back(p)
 
         new_exp.addSpectrum(new_spec)
