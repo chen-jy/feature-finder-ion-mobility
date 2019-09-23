@@ -9,13 +9,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature translator.')
     parser.add_argument('--input', action='store', required=True, type=str)
     parser.add_argument('--output', action='store', required=True, type=str)
-    parser.add_argument('--mode', action='store', required=True, type=int)
 
     args = parser.parse_args()
     
-    if args.mode == 0:
+    if args.input[-3:] == 'csv':
         csv_list = []
-        with open(args.input + '.csv', 'r') as f:
+        with open(args.input, 'r') as f:
             reader = csv.reader(f)
             csv_list = list(reader)
         
@@ -31,22 +30,19 @@ if __name__ == '__main__':
             f.setIntensity(float(csv_list[i][2]))
             features.push_back(f)
 
-        print('Done.')
         features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '.featureXML', features)
+        ms.FeatureXMLFile().store(args.output, features)
+        print('Done.')
 
-    else:
+    elif args.input[-10:] == 'featureXML':
         features = ms.FeatureMap()
-        ms.FeatureXMLFile().load(args.input + '.featureXML', features)
+        ms.FeatureXMLFile().load(args.input, features)
 
         data_points = []
         for feature in features:
             data_points.append([feature.getRT(), feature.getMZ(), feature.getIntensity()])
 
-        if args.mode == 2:
-            data_points = sorted(data_points, key=itemgetter(2), reverse=True)
-
-        with open(args.output + '.csv', 'w') as f:
+        with open(args.output, 'w') as f:
             f.write('RT,m/z,Intensity\n')
             print('Processing feature 1 of', features.size())
 
@@ -58,3 +54,6 @@ if __name__ == '__main__':
                                    data_points[i][2]))
 
         print('Done.')
+
+    else:
+        print("Error: input file format must be csv or featureXML")

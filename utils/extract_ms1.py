@@ -1,4 +1,5 @@
 import argparse
+
 import pyopenms as ms
 import numpy as np
 
@@ -10,7 +11,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     exp = ms.MSExperiment()
-    ms.MzMLFile().load(args.input + '.mzML', exp)
+    ms.MzMLFile().load(args.input, exp)
 
     spectra = exp.getSpectra()
     new_spectra = []
@@ -20,4 +21,4 @@ if __name__ == '__main__':
              new_spectra.append(spec)
 
     exp.setSpectra(new_spectra)
-    ms.MzMLFile().store(args.output + '.mzML', exp)
+    ms.MzMLFile().store(args.output, exp)

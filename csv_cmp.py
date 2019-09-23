@@ -40,30 +40,32 @@ def hull_area(hull):
     return abs(area) / 2.0
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='csv feature comparison by intensity.')
-    parser.add_argument('--found', action='store', required=True, type=str)
-    parser.add_argument('--tsv', action='store', required=True, type=str)
+    parser = argparse.ArgumentParser(description='Feature comparison tool.')
+    parser.add_argument('--input', action='store', required=True, type=str)
+    parser.add_argument('--ref', action='store', required=True, type=str)
     parser.add_argument('--output', action='store', required=True, type=str)
 
     args = parser.parse_args()
 
-    if args.found[-3:] == 'csv':
-        # Read input
+    if args.input[-3:] == 'csv':
+        # Read found features
         csv_list1, points1 = [], []
-        with open(args.found, 'r') as f:
+        with open(args.input, 'r') as f:
             reader = csv.reader(f)
             csv_list1 = list(reader)
 
         for i in range(1, len(csv_list1)):
             points1.append([float(x) for x in csv_list1[i]])
 
+        # Read reference features
         csv_list2, points2 = [], []
-        with open(args.tsv + '.csv', 'r') as f:
+        with open(args.ref, 'r') as f:
             reader = csv.reader(f)
             csv_list2 = list(reader)
 
         for i in range(1, len(csv_list2)):
             points2.append([float(x) for x in csv_list2[i]])
+            # To indicate whether this feature was found or not
             points2[i - 1].append(False)
 
         print('Beginning comparisons')
@@ -81,7 +83,7 @@ if __name__ == '__main__':
 
         points2 = sorted(points2, key=itemgetter(2), reverse=True)
 
-        with open(args.output + '.csv', 'w') as f:
+        with open(args.output, 'w') as f:
             f.write('RT,m/z,Intensity\n')
             for i in range(len(points2)):
                 f.write(str.format('{0},{1},{2}    {3}\n', points2[i][0], points2[i][1],
@@ -90,12 +92,13 @@ if __name__ == '__main__':
 
         print(num_common, 'features common.')
 
-    else:
+    elif args.input[-10:] == 'featureXML':
         found_features = ms.FeatureMap()
-        ms.FeatureXMLFile().load(args.found, found_features)
+        ms.FeatureXMLFile().load(args.input, found_features)
 
+        # Read reference features
         csv_list, points = [], []
-        with open(args.tsv + '.csv', 'r') as f:
+        with open(args.ref, 'r') as f:
             reader = csv.reader(f)
             csv_list = list(reader)
 
@@ -112,15 +115,12 @@ if __name__ == '__main__':
             if i % 50 == 0:
                 print('Processing feature', i + 1, 'of', len(points))
 
-            found = False
             similar = []
-
             for j in range(found_features.size()):
                 if similar_features(points[i], found_features[j]):
-                    found = True
                     similar.append(found_features[j])
 
-            if found:
+            if len(similar) > 0:
                 max_feature = similar[0]
                 max_area = hull_area(max_feature.getConvexHull().getHullPoints())
 
@@ -133,6 +133,7 @@ if __name__ == '__main__':
                 common_features.push_back(max_feature)
                 all_features.push_back(max_feature)
                 num_common += 1
+
             else:
                 f = ms.Feature()
                 f.setRT(points[i][0])
@@ -141,12 +142,16 @@ if __name__ == '__main__':
 
                 missing_features.push_back(f)
                 all_features.push_back(f)
-
-        missing_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '-missing.featureXML', missing_features)
+                
         all_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-all.featureXML', all_features)
+        missing_features.setUniqueIds()
+        ms.FeatureXMLFile().store(args.output + '-missing.featureXML', missing_features)
 
         common_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-common.featureXML', common_features)
         print(num_common, 'features common.')
+
+    else:
+        print("Error: ref file format must be csv or featureXML")
+        exit(1)
