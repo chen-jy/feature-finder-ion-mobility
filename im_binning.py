@@ -434,7 +434,8 @@ def has_peaks(exp):
 
     return False
 
-def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
+def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_req=1,
+                  window_size=float('Inf'), strict=True, sequential=True):
     """Runs an existing OpenMS feature finder on each of the experiment bins and writes
     the found features to files. Each bin (for each pass) gets its own featureXML and
     mzML files, each pass gets combined files, and the overall experiment gets a matched
@@ -446,6 +447,11 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
         ff_type (string): The name of the OpenMS feature finder to use.
         pick (boolean): Determines whether or not to pick peak the data before running
             the feature finder.
+
+        min_req (int): see peak_picker.py
+        window_size (float): see peak_picker.py
+        strict (boolean): see peak_picker.py
+        sequential (boolean): see peak_picker.py
     """
     pp = ms.PeakPickerHiRes()
     total_exp = [ms.MSExperiment(), ms.MSExperiment()]
@@ -460,7 +466,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
         elif pick == 2:
             ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
                                 '-prepick.mzML', exps[i])
-            new_exp = peak_picker.peak_pick(exps[i])
+            new_exp = peak_picker.peak_pick(exps[i], min_req, window_size, 0.1, strict,
+                                            sequential)
         else:
             new_exp = exps[i]
 
@@ -492,7 +499,10 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0):
         if pick == 1:
             pp.pickExperiment(exps2[i], new_exp)
         elif pick == 2:
-            new_exp = peak_picker.peak_pick(exps2[i])
+            ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
+                                '-prepick.mzML', exps[i])
+            new_exp = peak_picker.peak_pick(exps2[i], min_req, window_size, 0.1, strict,
+                                            sequential)
         else:
             new_exp = exps2[i]
 
@@ -533,16 +543,29 @@ if __name__ == "__main__":
     parser.add_argument('--infile', action='store', required=True, type=str)
     parser.add_argument('--outfile', action='store', required=True, type=str)
     parser.add_argument('--outdir', action='store', required=True, type=str)
+
     parser.add_argument('--num_bins', action='store', required=True, type=int)
     parser.add_argument('--mz_eps', action='store', required=True, type=float)
     parser.add_argument('--int_match', action='store', required=True, type=int)
     parser.add_argument('--peak_pick', action='store', required=True, type=int)
+
+    parser.add_argument('--min_req', action='store', required=True, type=int)
+    parser.add_argument('--window_size', action='store', required=True, type=float)
+    parser.add_argument('--strict', action='store', required=True, type=int)
+    parser.add_argument('--sequential', action='store', required=True, type=int)
     parser.add_argument('--match_only', action='store', required=False)
 
     args = parser.parse_args()
 
     num_bins = args.num_bins
     do_matching = True if args.match_only is not None else False
+
+    window_size = args.window_size
+    if window_size == -1:
+        window_size = float('Inf')
+
+    strict = True if args.strict == 1 else False
+    sequential = True if args.sequential == 1 else False
     
     if not do_matching:
         exp = ms.MSExperiment()
@@ -564,7 +587,7 @@ if __name__ == "__main__":
             bin_spectrum(spec, args.mz_eps)
 
         find_features(args.outdir, args.outfile, 'centroided', args.peak_pick,
-                      args.int_match)
+                      args.int_match, args.min_req, window_size, strict, sequential)
     else:
         print('Starting feature matcher')
         fm1, fm2 = [], []
