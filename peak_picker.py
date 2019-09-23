@@ -142,7 +142,7 @@ def peak_pick(exp, min_req=3, window_size=float('Inf'), small_peak=0.1, strict=T
             total_position = 0
             for j in range(low_bound, high_bound + 1):
                 picked[j] = True
-                total_position += spec[j].getPos() * (spec[j].getIntensity /
+                total_position += spec[j].getPos() * (spec[j].getIntensity() /
                                                       total_intensity)
 
             p = ms.Peak1D()
