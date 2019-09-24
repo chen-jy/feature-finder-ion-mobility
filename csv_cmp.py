@@ -105,8 +105,8 @@ if __name__ == '__main__':
         for i in range(1, len(csv_list)):
             points.append([float(x) for x in csv_list[i]])
 
-        common_features, missing_features, all_features = ms.FeatureMap(), \
-            ms.FeatureMap(), ms.FeatureMap()
+        common_features, missing_features, unique_features, all_features = \
+            ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
 
         print('Beginning comparisons')
         num_common = 0
@@ -142,11 +142,17 @@ if __name__ == '__main__':
 
                 missing_features.push_back(f)
                 all_features.push_back(f)
+
+        for f in found_features:
+            if f not in common_features:
+                unique_features.push_back(f)
                 
         all_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-all.featureXML', all_features)
         missing_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-missing.featureXML', missing_features)
+        unique_features.setUniqueIds()
+        ms.FeatureXMLFile().store(args.output + '-unique.featureXML', unique_features)
 
         common_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-common.featureXML', common_features)
