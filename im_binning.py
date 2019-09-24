@@ -97,7 +97,7 @@ def run_ff(exp, type):
         type (string): The name of the feature finder to run.
 
     Returns:
-        FeatureMap: (OpenMS) Contains the found features from the given experiment.
+        FeatureMap (OpenMS): Contains the found features from the given experiment.
     """
     ff = ms.FeatureFinder()
     ff.setLogType(ms.LogType.CMD)
@@ -176,7 +176,6 @@ def bin_spectrum(spec, mz_epsilon=0.001):
 
         for j in range(len(temp_bins[i])):
             if within_range(curr_mz, temp_bins[i][j][1], mz_epsilon):
-            #if (temp_bins[i][j][1] == curr_mz):
                 num_mz += 1
                 running_intensity += temp_bins[i][j][2]
             else:
@@ -221,7 +220,6 @@ def bin_spectrum(spec, mz_epsilon=0.001):
 
         for j in range(len(temp_bins2[i])):
             if within_range(curr_mz, temp_bins2[i][j][1], mz_epsilon):
-            #if (temp_bins2[i][j][1] == curr_mz):
                 num_mz += 1
                 running_intensity += temp_bins2[i][j][2]
             else:
@@ -262,10 +260,9 @@ def combine_spectra(exp1, exp2):
     for spec in spectra:
         exp1.addSpectrum(spec)
 
-# Is there a better way to do this?
 def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
-    """Determines if two features are "similar"; i.e. both their RTs and M/Zs are within a
-    certain threshold of each other.
+    """Determines if two features are "similar"; i.e. both their RTs and M/Zs are within
+    a certain threshold of each other.
 
     Args:
         feature1 (Feature or list<float>): An OpenMS feature or a list of floats
@@ -291,7 +288,7 @@ def hull_area(hull):
     """Calculates the area of a convex hull (as a polygon) using the shoelace formula.
 
     Args:
-        hull (libcpp_vector[DPosition2]): A list of points of the convex hull.
+        hull (list<DPosition2>): A list of points of the convex hull.
 
     Returns:
         float: The area of the convex hull.
@@ -313,7 +310,7 @@ def bb_area(box):
     """
     _min = box.minPosition()
     _max = box.maxPosition()
-    return abs(_min[0] - _max[0]) * abs(_min[1] * _max[1])
+    return abs(_min[0] - _max[0]) * abs(_min[1] - _max[1])
 
 def match_features_internal(features, rt_threshold=0.1, mz_threshold=0.01):
     """Matches overlapping features within a single bin. Intended to correct satellite
@@ -376,13 +373,13 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     
     features = ms.FeatureMap()
 
+    # Go through each bin in the first pass
     for i in range(len(features1)):
         for f1 in features1[i]:
             similar = []
             max_area = hull_area(f1.getConvexHull().getHullPoints())
             max_feature = f1
 
-            # Should test to see if this gets rid of satellite features
             for f2 in features2[i]:
                 if similar_features(f1, f2, rt_threshold, mz_threshold):
                     similar.append(f2)
@@ -394,7 +391,10 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     max_feature = f2
 
             if max_feature not in features:
+                # TODO: maybe also need to check similar_features against everything
+                # already in features
                 features.push_back(max_feature)
+
             # No need to map to the right bin if a match was found in the left
             if len(similar) > 0:
                 continue
@@ -413,6 +413,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
                     max_area = hp
                     max_feature = f2
 
+            # If len(similar) is 0, max_feature has already been added (above)
             if len(similar) > 0 and max_feature not in features:
                 features.push_back(max_feature)
 
@@ -443,10 +444,12 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
 
     Args:
         outdir (string): The directory to write files to. It must already exist.
-        outfile (string): The name of this experiment.
+        outfile (string): The name of this run.
         ff_type (string): The name of the OpenMS feature finder to use.
-        pick (boolean): Determines whether or not to pick peak the data before running
-            the feature finder.
+        pick (int): Determines whether or not to pick peak the data before running
+            the feature finder (0 = none, 1 = PPHR, 2 = custom).
+        imatch(int): Determines whether or not to perform interior feature matching on
+            individual bins.
 
         min_req (int): see peak_picker.py
         window_size (float): see peak_picker.py
@@ -477,6 +480,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
         temp_features = ms.FeatureMap()
         if has_peaks(new_exp):
             temp_features = run_ff(new_exp, ff_type)
+
         # Added internal matching here
         if imatch == 1:
             temp_features = match_features_internal(temp_features)
@@ -512,6 +516,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
         temp_features = ms.FeatureMap()
         if has_peaks(new_exp):
             temp_features = run_ff(new_exp, ff_type)
+
         if imatch == 1:
             temp_features = match_features_internal(temp_features)
 
@@ -529,8 +534,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
 
     # Combine features
     total_features[0].setUniqueIds()
-    total_features[1].setUniqueIds()
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass1.featureXML', total_features[0])
+    total_features[1].setUniqueIds()
     ms.FeatureXMLFile().store(outdir + '/' + outfile + '-pass2.featureXML', total_features[1])
 
     print("Starting cross-bin feature matching. This may take a while.")
@@ -570,7 +575,7 @@ if __name__ == "__main__":
     if not do_matching:
         exp = ms.MSExperiment()
         print('Loading mzML input file....................', end='', flush=True)
-        ms.MzMLFile().load(args.infile + '.mzML', exp)
+        ms.MzMLFile().load(args.infile, exp)
         print('Done')
 
         spectra = exp.getSpectra()
@@ -588,6 +593,7 @@ if __name__ == "__main__":
 
         find_features(args.outdir, args.outfile, 'centroided', args.peak_pick,
                       args.int_match, args.min_req, window_size, strict, sequential)
+
     else:
         print('Starting feature matcher')
         fm1, fm2 = [], []
@@ -602,6 +608,6 @@ if __name__ == "__main__":
             ms.FeatureXMLFile().load(args.outdir + '/' + args.outfile + '-pass2-bin' +
                                    str(i) + '.featureXML', fm2[i])
 
-        f = match_features(fm1, fm2, 10, 0.5)
+        f = match_features(fm1, fm2)
         f.setUniqueIds()
         ms.FeatureXMLFile().store(args.outdir + '/' + args.outfile + '-m.featureXML', f)
