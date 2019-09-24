@@ -504,7 +504,7 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
             pp.pickExperiment(exps2[i], new_exp)
         elif pick == 2:
             ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
-                                '-prepick.mzML', exps[i])
+                                '-prepick.mzML', exps2[i])
             new_exp = peak_picker.peak_pick(exps2[i], min_req, window_size, 0.1, strict,
                                             sequential)
         else:

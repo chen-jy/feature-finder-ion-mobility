@@ -88,8 +88,9 @@ def peak_pick(exp, min_req=1, window_size=float('Inf'), small_peak=0.1, strict=T
             
             # Walk left
             for j in range(i - 1, -1, -1):
-                #if picked[j]:
-                #    break
+                # TODO: test this
+                if picked[j]:
+                    break
 
                 if abs(spec[j].getPos() - init_position) > window_size:
                     break
@@ -118,8 +119,9 @@ def peak_pick(exp, min_req=1, window_size=float('Inf'), small_peak=0.1, strict=T
 
             # Walk right
             for j in range(i + 1, num_peaks):
-                #if picked[j]:
-                #    break
+                # TODO: test this
+                if picked[j]:
+                    break
 
                 if abs(spec[j].getPos() - init_position) > window_size:
                     break
