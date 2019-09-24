@@ -1,119 +1,98 @@
 # FragToPre
 
-**Warning: this README was last updated 2019-08-21 and is probably outdated; it is not updated regularly.**
+**Warning: this README was last updated 2019-09-24 and is probably outdated; it is not updated regularly.**
 
 Approaches to four-dimensional mass spectrometry feature finding (with retention time, mass to charge, intensity, and ion mobility data).
 
-Descriptions:
+Descriptions of python tools:
+
+**im_binning**: splits raw mzML data into frames by RT, then for each frame, bins data points in the IM dimension. All of the respective bins from each frame are then linked together, and FeatureFinderCentroided (with optional peak picking) is run on each.
+
+- infile*: the name of the source mzML file with the file extension
+- outfile*: the name to group the output by (output prefix)
+- outdir*: the directory to output to (it must already exist)
+- num_bins*: the number of bins to use
+- mz_eps*: the m/z epsilon to use when binning
+- int_match*: `1` to perform feature matching within individual bins or `0` to skip it
+- peak_pick*: `0` to skip peak picking, `1` to use PeakPickerHiRes, or `2` to use the custom peak picker (peak_picker.py)
+- min_req*: (custom PP) the minimum number of peaks to either side of a start peak to be consider a peak set
+- window_size*: (custom PP) the maximum m/z window to consider for a peak set (`-1` for infinity)
+- strict*: (custom PP) `1` for all neighbouring peaks to be strictly non-increasing or `0` to allow a single increase in intensity on either side
+- sequential*: (custom PP) `1` to use left-to-right m/z mode or `0` to use decreasing peak intensity mode
+- match_only: if `1`, only the feature matcher will be run (it assumes that binning has already completed and all required files are present)
+
+```
+python im_binning.py --infile sample.mzML --outfile run --outdir im1 --num_bins 10 --mz_eps 0.001 --int_match 1 --peak_pick 2 --min_req 3 --window_size 0.015 --strict 1 --sequential 1
+```
+
+**peak_picker**: a simple custom peak picker for use on MS data with IM information, intended to replace PeakPickerHiRes in the case that it destroys the data.
+
+- input*: the name of the raw mzML file
+- output*: the name of the peak-picked mzML file to output to
+
+```
+python peak_picker.py --input sample.mzML --output picked_sample.mzML
+```
+
+**csv_cmp**: compares a set of features (as a csv or featureXML file) with another set of reference features (as a csv file). In csv-csv mode, the set of reference features is sorted by decreasing intensity, and a `[FOUND]` is appended to each line that represents a common feature. In featureXML-csv mode, features are separated into categories (all features, missing features, unique features, and common features), and are saved as featureXML files.
+- input*: the name of the input file (can be csv or featureXML)
+- ref*: the name of the csv file containing the reference feature set
+- output*: if \<input\> is a csv file, the name of the output csv file. Otherwise, the prefix to use for the output featureXML files
+
+```
+python csv_cmp.py --input im1/features.csv --ref ref_features.csv --output im1/common_features.csv
+python csv_cmp.py --input im1/run.featureXML --ref ref_features.csv --output im1/features_cmp
+```
 
 **baseline**: splits raw mzML data into frames by RT, then for each frame, swaps RT data with IM data. Next, FeatureFinderCentroided is run, and the results are linked together across frames.
 
-- infile*: the name of the source mzML file without the file extension (no ".mzML")
-- outfile*: the name to group the output by
+- infile*: the name of the source mzML file without the file extension
+- outfile*: the name to group the output by (output prefix)
 - outdir*: the directory to output to (it must already exist)
 - mode*: `0` to find features and link fragments to precursors, `1` to only find features, or `2` to only link fragments to precursors
 
 ```
 export OMP_NUM_THREADS=1
-python baseline.py --infile sample --outfile rt --outdir run1 --mode 1
+python baseline.py --infile sample --outfile run --outdir baseline --mode 1
 ```
 
-**im_binning**: splits raw mzML data into frames by RT, then for each frame, bins data points in the IM dimension. All of the bins are then linked together and FeatureFinderCentroided (with optional peak picking) is run.
+**utils/translate_features**: converts features between csv and featureXML formats.
 
-- infile*: the name of the source mzML file without the file extension
-- outfile*: the name to group the output by
-- outdir*: the directory to output to (it must already exist)
-- num_bins*: the number of bins to use
-- peak_pick: `0` to skip peak picking, `1` to use PeakPickerHiRes after binning, or `2` to use the custom peak picker (peak_picker.py) after binning
-- match_only: if an argument is present for this flag, only the feature matcher will be run (it assumes that binning has already completed and all required files are present)
+- input*: the name of the input file
+- output*: the name of the output file
 
 ```
-python im_binning.py --infile sample --outfile im --outdir run2 --num_bins 10 --peak_pick 0
+python translate_features.py --input features.csv --output features.featureXML
+python translate_features.py --input features.featureXML --output features.csv
 ```
 
-**cmp_features**: compares features in four featureXML files (intended for features found by im_binning, FeatureFinderCentroided, baseline, and the source file's corresponding tsv file). Thresholds in the RT and m/z dimensions are used to determine "similarity", and the number of intersecting features is found.
+**utils/extract_ms1**: removes all non-MS1 spectra from a raw mzML file.
 
-- found*: the name of the featureXML file produced by im_binning, without the file extension
-- openms: the featureXML file produced by FeatureFinderCentroided
-- source: the raw mzML file (either --openms or --source must be used)
-- baseline*: the featureXML file produced by baseline
-- truth*: the featureXML file (filtered by csvFilter and translated by translate_features) of the raw data's corresponding tsv file
-- outdir*: the directory to output to
-- brute_force: if an argument is present for this flag, various threshold values will be tested
-
-```
-python cmp_features.py --found run1/im --source sample --baseline run2/rt --truth filtered --outdir cmp
-```
-
-**pphr_param_finder**: tries to find suitable parameters for running PeakPickerHiRes on IM-binned data using brute force.
-
-- input*: the name of the raw mzML file, without the file extension
-- output*: the directory to output to
-- target: the minimum number of features required to be detected in order for a parameter set to be considered suitable
-
-```
-python pphr_param_finder.py --input run1/im-pass1-bin1 --output run3 --target 250
-```
-
-**feature_match**: tries to find suitable parameters for running im_binning's feature matcher.
-
-- input*: the input featureXML files (see below for the proper format)
-- output*: the name of the output directory
-- nbins*: the number of bins used (the number of featureXML files per pass)
-- nprocs: the number of processors to use in the work pool implementation
-- mp_mode: `0` to use the serial implementation, `1` to use the work pool implementation, or `2` to use the process implementation
-
-```
-python feature_match.py --input run2/im --output run4 --nbins 10 --nprocs 16 --mp_mode 1
-```
-
-**peak_picker**: a custom peak picker for use on MS data with IM information, intended to replace PeakPickerHiRes.
-
-- input*: the name of the raw mzML file without the file extension
-- output*: the name of the peak-picked mzML file to output to
-
-```
-python peak_picker.py --input sample --output pp_sample
-```
-
-**utils/translate_features**: converts features in .csv format to .featureXML format.
-
-- input*: the name of the input csv file without the file extension
-- output*: the name of the output featureXML file, without the file extension
-
-```
-python translate_features.py --input sample_csv --output sample_fxml
-```
-
-**utils/csvFilter**: filters data from a .csv file (which has been converted from a .tsv file). Either filters by initial_peak_quality (q) or extracts RT, m/z, and intensity data; i.e. filter performs a "SELECT * FROM sample_csv WHERE q > 0.01" and extract performs a "SELECT RT, m/z, intensity FROM sample_csv".
-
-Usage: `csvFilter <csv file> <mode>`
-- mode*: 0 to filter by q or 1 to extract triplet data
-Note: the threshold value can be changed within the source code
-
-**utils/plot_data**: plots 3D data in a scatter plot.
-
-- input*: the name of the input file (each line must have three numbers)
-- output: the name of the output file to save the graph to
-- xlabel: the label of the x-axis
-- ylabel: the label of the y-axis
-- zlabel: the label of the z-axis
-
-```
-python plot_data.py --input scatter --output graph.png --xlabel RT --ylabel mz --zlabel intensity
-```
-
-**utils/tsv_to_csv**: converts a tsv file to a csv file (if a machine does not have Excel to do this).
-
-Usage: `python tsv_to_csv.py < input_tsv > output_csv`
-
-**utils/extract_ms1**: discards all non-MS1 spectra from a raw mzML file.
-
-- input*: the name of the raw mzML file without the file extension
+- input*: the name of the raw mzML file
 - output*: the name of the new mzML file to output to
 
 ```
-python extract_ms1.py --input sample --output small_sample
+python extract_ms1.py --input sample.mzML --output small_sample.mzML
 ```
 
-**legacy/***: cluster_finder, plane_fitter, and ransac. This is an old approach and is no longer supported or documented.
+**utils/csvFilter**: filters data from a csv file.
+- i*: input csv
+- o*: output csv
+- m*: mode (see below)
+- a: min RT
+- b max RT
+
+If $m$ is `0`, a selection of $a \leq$ RT $\leq b \,\wedge$ q_score $\leq$ 0.01 $\wedge$ peak_group_rank = 1 is done.
+If $m$ is `1`, a projection of RT, m/z, and (precursor) Intensity of all the lines is done.
+If $m$ is `2`, a sort by decreasing precusor intensity is done.
+
+Note: compile with at least `-std=c++11`
+```
+./csvFilter -i full_sample.csv -o q_filtered.csv -m 0 -a 800 -b 900
+./csvFilter -i q_filtered.csv -o q_filtered_small.csv -m 1
+./csvFilter -i full_sample.csv -o sorted_sample.csv -m 2
+```
+
+**utils/legacy/***: tsv_to_csv and plot_data. These are old tools and are no longer documented (go through the README's history to see old documentation), although they may still be useful in some scenarios.
+
+**legacy/***: binning/\* and clustering/\*. These are old tools and are no longer documented (go through the README's history to see old documentation), although the tools in the former subdirectory may still be useful in some scenarios.
