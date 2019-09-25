@@ -106,7 +106,7 @@ if __name__ == '__main__':
             points.append([float(x) for x in csv_list[i]])
 
         common_features, missing_features, unique_features, all_features = \
-            ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
+            ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
 
         print('Beginning comparisons')
         num_common = 0
