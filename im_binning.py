@@ -141,13 +141,15 @@ def bin_spectrum(spec, mz_epsilon=0.001):
     sorted_points = sorted(points, key=itemgetter(3))
 
     # To circumvent python's aliasing
-    temp_bins = []
+    temp_bins, new_bins = [], []
     for i in range(num_bins):
         temp_bins.append([])
+        new_bins.append([])
 
-    temp_bins2 = []
+    temp_bins2, new_bins2 = [], []
     for i in range(num_bins + 1):
         temp_bins2.append([])
+        new_bins2.append([])
 
     # Step 1: assign points to bins
     for i in range(len(sorted_points)):
@@ -182,31 +184,26 @@ def bin_spectrum(spec, mz_epsilon=0.001):
                 # Reached a new m/z slice; update the previous intensities
                 for k in range(mz_start, mz_start + num_mz):
                     temp_bins[i][k][2] = running_intensity
+                # Fix: remove duplicates (need to clean up this code)
+                new_bins[i].append(list(temp_bins[i][mz_start]))
 
                 # Update the current counters
                 mz_start, num_mz, curr_mz = j, 1, temp_bins[i][j][1]
                 running_intensity = temp_bins[i][j][2]
 
-        # Take care of the last slice (if required)
-        if num_mz > 0:
-            for k in range(mz_start, mz_start + num_mz):
-                temp_bins[i][k][2] = running_intensity
+        # Take care of the last slice
+        for k in range(mz_start, mz_start + num_mz):
+            temp_bins[i][k][2] = running_intensity
+        new_bins[i].append(list(temp_bins[i][mz_start]))
 
-        bins[i].extend(temp_bins[i])
+        bins[i].extend(new_bins[i]) # Fix: changed from temp_bins[i]
 
         # Build and add a new spectrum
-        transpose = list(zip(*temp_bins[i]))
+        transpose = list(zip(*new_bins[i]))
 
         new_spec = ms.MSSpectrum()
         new_spec.setRT(spec.getRT())
         new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
-
-        # Add IM data
-        fda = ms.FloatDataArray()
-        for j in list(transpose[3]):
-            fda.push_back(j)
-        new_spec.setFloatDataArrays([fda])
-
         exps[i].addSpectrum(new_spec)
 
     # Step 3: for each m/z, sum the intensities (pass 2)
@@ -225,28 +222,23 @@ def bin_spectrum(spec, mz_epsilon=0.001):
             else:
                 for k in range(mz_start, mz_start + num_mz):
                     temp_bins2[i][k][2] = running_intensity
+                new_bins2[i].append(list(temp_bins2[i][mz_start]))
 
                 mz_start, num_mz, curr_mz = j, 1, temp_bins2[i][j][1]
                 running_intensity = temp_bins2[i][j][2]
 
-        if num_mz > 0:
-            for k in range(mz_start, mz_start + num_mz):
-                temp_bins2[i][k][2] = running_intensity
+        for k in range(mz_start, mz_start + num_mz):
+            temp_bins2[i][k][2] = running_intensity
+        new_bins2[i].append(list(temp_bins2[i][mz_start]))
 
-        bins2[i].extend(temp_bins2[i])
+        bins2[i].extend(new_bins2[i])
 
         # Build and add a new spectrum
-        transpose = list(zip(*temp_bins2[i]))
+        transpose = list(zip(*new_bins2[i]))
 
         new_spec = ms.MSSpectrum()
         new_spec.setRT(spec.getRT())
         new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
-
-        fda = ms.FloatDataArray()
-        for j in list(transpose[3]):
-            fda.push_back(j)
-        new_spec.setFloatDataArrays([fda])
-
         exps2[i].addSpectrum(new_spec)
 
 def combine_spectra(exp1, exp2):
@@ -374,6 +366,9 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     features = ms.FeatureMap()
 
     # Go through each bin in the first pass
+    # TODO: this finds and saves features unique to bins in the first pass, but not
+    #       features unique to bins in the second pass. Implementing this should
+    #       increase the number of features found
     for i in range(len(features1)):
         for f1 in features1[i]:
             similar = []
