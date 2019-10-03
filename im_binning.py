@@ -366,9 +366,6 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
     features = ms.FeatureMap()
 
     # Go through each bin in the first pass
-    # TODO: this finds and saves features unique to bins in the first pass, but not
-    #       features unique to bins in the second pass. Implementing this should
-    #       increase the number of features found
     for i in range(len(features1)):
         for f1 in features1[i]:
             similar = []
@@ -388,6 +385,10 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
             if max_feature not in features:
                 # TODO: maybe also need to check similar_features against everything
                 # already in features
+
+                # Should check the final featureXML to see if there are any tight
+                # clusters of features. If there are, then do a final round of interior
+                # feature matching on the entire set of features
                 features.push_back(max_feature)
 
             # No need to map to the right bin if a match was found in the left
@@ -410,6 +411,60 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
             # If len(similar) is 0, max_feature has already been added (above)
             if len(similar) > 0 and max_feature not in features:
+                features.push_back(max_feature)
+
+    # Go through each bin in the second pass
+    for i in range(len(features2)):
+        for f1 in features2[i]:
+            similar = []
+            max_area = hull_area(f1.getConvexHull().getHullPoints())
+            max_feature = f1
+
+            if i > 0:
+                for f2 in features1[i - 1]:
+                    if similar_features(f1, f2, rt_threshold, mz_threshold):
+                        similar.append(f2)
+
+            for f2 in similar:
+                hp = hull_area(f2.getConvexHull().getHullPoints())
+                if hp > max_area:
+                    max_area = hp
+                    max_feature = f2
+
+            is_new = True
+            for f3 in features:
+                if similar_features(f2, f3, rt_threshold, mz_threshold):
+                    is_new = False
+                    break
+
+            if is_new:
+                features.push_back(max_feature)
+
+            if len(similar) > 0:
+                continue
+
+            similar = []
+            max_area = hull_area(f1.getConvexHull().getHullPoints())
+            max_feature = f1
+
+            if i < len(features1):
+                for f2 in features1[i]:
+                    if similar_features(f1, f2, rt_threshold, mz_threshold):
+                        similar.append(f2)
+
+            for f2 in similar:
+                hp = hull_area(f2.getConvexHull().getHullPoints())
+                if hp > max_area:
+                    max_area = hp
+                    max_feature = f2
+
+            is_new = True
+            for f3 in features:
+                if similar_features(f2, f3, rt_threshold, mz_threshold):
+                    is_new = False
+                    break
+
+            if len(similar) > 0 and is_new:
                 features.push_back(max_feature)
 
     return features
