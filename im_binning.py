@@ -515,6 +515,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
         new_exp = ms.MSExperiment()
 
         if pick == 1:
+            ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
+                                '-prepick.mzML', exps[i])
             pp.pickExperiment(exps[i], new_exp)
         elif pick == 2:
             ms.MzMLFile().store(outdir + '/' + outfile + '-pass1-bin' + str(i) +
@@ -552,6 +554,8 @@ def find_features(outdir, outfile, ff_type='centroided', pick=0, imatch=0, min_r
 
         if pick == 1:
             pp.pickExperiment(exps2[i], new_exp)
+            ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
+                                '-prepick.mzML', exps2[i])
         elif pick == 2:
             ms.MzMLFile().store(outdir + '/' + outfile + '-pass2-bin' + str(i) +
                                 '-prepick.mzML', exps2[i])
