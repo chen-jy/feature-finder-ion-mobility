@@ -12,10 +12,10 @@ if __name__ == '__main__':
     with open(args.input, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            mz = row['m/z']
             rt = row['Retention time']
+            mz = row['m/z']
             intensity = row['Intensity']
-            data.append([mz, rt, intensity])
+            data.append([rt, mz, intensity])
             
     with open(args.output, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
