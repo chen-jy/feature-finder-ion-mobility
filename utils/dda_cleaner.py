@@ -1,5 +1,6 @@
 import argparse
 import csv
+from operator import itemgetter
 
 def checkFloat(val):
     try:
@@ -23,10 +24,15 @@ if __name__ == '__main__':
             rt = checkFloat(row['Retention time'])
             mz = checkFloat(row['m/z'])
             intensity = checkFloat(row['Intensity'])
+            
             if rt is False or mz is False or intensity is False:
+                continue
+            if mz <= 10 or intensity <= 10:
                 continue
             if args.start <= rt <= args.stop:
                 data.append([rt, mz, intensity])
+                
+    data = sorted(data, key=itemgetter(2))
             
     with open(args.output, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
