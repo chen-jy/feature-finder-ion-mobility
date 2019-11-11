@@ -4,6 +4,12 @@ import csv
 import pyopenms as ms
 from operator import itemgetter
 
+def checkFloat(val):
+    try:
+        return float(val)
+    except ValueError:
+        return False
+
 if __name__ == '__main__':
     print('Starting feature translation', flush=True)
     parser = argparse.ArgumentParser(description='Feature translator.')
@@ -23,7 +29,13 @@ if __name__ == '__main__':
         for i in range(1, len(csv_list)):
             if i % 50 == 0:
                 print('Processing feature', i, 'of', len(csv_list) - 1)
-
+                
+            rt = checkFloat(csv_list[i][0])
+            mz = checkFloat(csv_list[i][1])
+            intensity = checkFloat(csv_list[i][2])
+            if rt is False or mz is False or intensity is False:
+                continue
+            
             f = ms.Feature()
             f.setRT(float(csv_list[i][0]))
             f.setMZ(float(csv_list[i][1]))
