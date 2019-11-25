@@ -15,7 +15,10 @@ if __name__ == '__main__':
     parser.add_argument('--file', action='store', required=True, type=str)
     parser.add_argument('--start', action='store', required=True, type=float)
     parser.add_argument('--stop', action='store', required=True, type=float)
+    parser.add_argument('--pep', action='store', required=False, type=float)
+    
     args = parser.parse_args()
+    PEP = args.pep if args.pep is not None else float('inf')
     
     data = []
     errorFalse, errorSmall = 0, 0
@@ -28,6 +31,7 @@ if __name__ == '__main__':
             rt = checkFloat(row['Retention time'])
             mz = checkFloat(row['m/z'])
             intensity = checkFloat(row['Intensity'])
+            pep = checkFloat(row['PEP'])
             
             if rf != args.file:
                 continue
@@ -37,7 +41,7 @@ if __name__ == '__main__':
             if mz <= 10 or intensity <= 10:
                 errorSmall += 1
                 continue
-            if args.start <= rt <= args.stop:
+            if args.start <= rt <= args.stop and pep < PEP:
                 data.append([rt, mz, intensity])
                 cleanRows += 1
                 
