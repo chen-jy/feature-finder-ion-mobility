@@ -6,23 +6,13 @@ import pyopenms as ms
 from operator import itemgetter
 from math import floor
 
-# Snippet from cmp_features
-def binary_search_leftmost(arr, idx, target):
-    l, r = 0, len(arr)
-    while l < r:
-        m = floor((l + r) / 2)
-        if arr[m][idx] < target:
-            l = m + 1
-        else:
-            r = m
-    # Check this statement
-    return l if l < len(arr) else l - 1
-
-# Modified snippet from im_binning
 def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
     if isinstance(feature1, list) and isinstance(feature2, list):
         return (abs(feature1[0] - feature2[0]) < rt_threshold and
                 abs(feature1[1] - feature2[1]) < mz_threshold)
+    if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
+        return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
+                abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
     if isinstance(feature1, list) and isinstance(feature2, ms.Feature):
         return (abs(feature1[0] - feature2.getRT()) < rt_threshold and
                 abs(feature1[1] - feature2.getMZ()) < mz_threshold)
@@ -31,7 +21,6 @@ def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
 
     return False
 
-# Snippet from im_binning
 def hull_area(hull):
     area = 0.0
     for i in range(len(hull)):
@@ -42,10 +31,14 @@ def hull_area(hull):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison tool.')
     parser.add_argument('--input', action='store', required=True, type=str)
-    parser.add_argument('--ref', action='store', required=True, type=str)
     parser.add_argument('--output', action='store', required=True, type=str)
-
+    parser.add_argument('--ref', action='store', required=True, type=str)
     args = parser.parse_args()
+
+    num_common = 0
+    matched = [0, 0, 0] # Zero times, once, multiple times
+
+    #TODO: add the option for ref to be featureXML, not just csv.
 
     if args.input[-3:] == 'csv':
         # Read found features
@@ -69,28 +62,35 @@ if __name__ == '__main__':
             points2[i - 1].append(False)
 
         print('Beginning comparisons')
-        num_common = 0
-
         for i in range(len(points2)):
             if i % 50 == 0:
                 print('Processing feature', i + 1, 'of', len(points2))
 
+            num_similar = 0
             for j in range(len(points1)):
-                if similar_features(points2[i], points1[j]) and points2[i][3] == False:
-                    points2[i][3] = True
-                    num_common += 1
-                    break
+                if similar_features(points2[i], points1[j]):
+                    if points2[i][3] == False:
+                        points2[i][3] = True
+                        num_common += 1
+                    num_similar += 1
+
+            if num_similar == 0:
+                matched[0] += 1
+            elif num_similar == 1:
+                matched[1] += 1
+            else:
+                matched[2] += 1
 
         points2 = sorted(points2, key=itemgetter(2), reverse=True)
 
         with open(args.output, 'w') as f:
             f.write('RT,m/z,Intensity\n')
             for i in range(len(points2)):
-                f.write(str.format('{0},{1},{2}    {3}\n', points2[i][0], points2[i][1],
+                f.write(str.format('{0},{1},{2},{3}\n', points2[i][0], points2[i][1],
                                    points2[i][2],
-                                   '[FOUND]' if points2[i][3] else ''))
+                                   'COMMON' if points2[i][3] else 'MISSING'))
 
-        print(num_common, 'features common.')
+        print(num_common, ' features common. (', sum(matched), ')', sep='')
 
     elif args.input[-10:] == 'featureXML':
         found_features = ms.FeatureMap()
@@ -109,8 +109,6 @@ if __name__ == '__main__':
             ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
 
         print('Beginning comparisons')
-        num_common = 0
-
         for i in range(len(points)):
             if i % 50 == 0:
                 print('Processing feature', i + 1, 'of', len(points))
@@ -119,6 +117,13 @@ if __name__ == '__main__':
             for j in range(found_features.size()):
                 if similar_features(points[i], found_features[j]):
                     similar.append(found_features[j])
+
+            if len(similar) == 0:
+                matched[0] += 1
+            elif len(similar) == 1:
+                matched[1] += 1
+            else:
+                matched[2] += 1
 
             if len(similar) > 0:
                 max_feature = similar[0]
@@ -133,7 +138,6 @@ if __name__ == '__main__':
                 common_features.push_back(max_feature)
                 all_features.push_back(max_feature)
                 num_common += 1
-
             else:
                 f = ms.Feature()
                 f.setRT(points[i][0])
@@ -156,8 +160,12 @@ if __name__ == '__main__':
 
         common_features.setUniqueIds()
         ms.FeatureXMLFile().store(args.output + '-common.featureXML', common_features)
-        print(num_common, 'features common.')
+        print(num_common, ' features common. (', sum(matched), ')', sep='')
 
     else:
-        print("Error: ref file format must be csv or featureXML")
+        print("Error: input file format must be either csv or featureXML")
         exit(1)
+
+    print("No matches:", matched[0])
+    print("One match:", matched[1])
+    print("Multiple matches:", matched[2])
