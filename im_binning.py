@@ -433,7 +433,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
             is_new = True
             for f3 in features:
-                if similar_features(f2, f3, rt_threshold, mz_threshold):
+                if similar_features(max_feature, f3, rt_threshold, mz_threshold):
                     is_new = False
                     break
 
@@ -460,7 +460,7 @@ def match_features(features1, features2, rt_threshold=5, mz_threshold=0.01):
 
             is_new = True
             for f3 in features:
-                if similar_features(f2, f3, rt_threshold, mz_threshold):
+                if similar_features(max_feature, f3, rt_threshold, mz_threshold):
                     is_new = False
                     break
 
