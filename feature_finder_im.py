@@ -6,17 +6,18 @@ Extends OpenMS (via pyOpenMS) feature finding capabilities to work on 4D LC-IMS-
 import argparse
 from operator import itemgetter
 import os
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional
 
 import pyopenms as ms
 
-import peak_picker
+import common_utils_im as util
+import peak_picker_im as ppim
 
 
 class FeatureFinderIonMobility:
     """The LC-IMS-MS/MS feature finder.
 
-    No attributes are public, and the only methods that should be called are run() and reset().
+    There are no public attributes, and the only public method is run().
     """
 
     MZ_EPSILON = 0.001
@@ -35,39 +36,6 @@ class FeatureFinderIonMobility:
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
 
-    def get_spectrum_points(self, spec: ms.MSSpectrum) -> List[List[float]]:
-        """Extracts the retention times, mass to charges, intensities, and ion mobility values of
-        all peaks in a spectrum.
-
-        Keyword arguments:
-        spec: the spectrum to extract data points from
-
-        Returns: a list of lists, where each interior list holds RT, m/z, intensity, and IM data
-        (in that order) for a single peak in the spectrum.
-        """
-        point_data = zip(*spec.get_peaks(), spec.getFloatDataArrays()[0])
-        return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
-
-    def get_im_extrema(self, spectra: List[ms.MSSpectrum]) -> Tuple[float, float]:
-        """Finds the smallest and largest IM values in a list of spectra.
-
-        Keyword arguments:
-        spectra: the list of spectra with IM data to scan through
-
-        Returns: a tuple of the smallest and largest IM values, in that order.
-        """
-        smallest_im, largest_im = float('inf'), float('-inf')
-
-        for spec in spectra:
-            points = self.get_spectrum_points(spec)
-            for point in points:
-                if point[3] < smallest_im:
-                    smallest_im = point[3]
-                if point[3] > largest_im:
-                    largest_im = point[3]
-
-        return smallest_im, largest_im
-
     def setup_bins(self, spectra: List[ms.MSSpectrum]) -> None:
         """Sets up the IM bins for feature finding.
 
@@ -75,7 +43,7 @@ class FeatureFinderIonMobility:
         spectra: the list of spectra to bin
         """
         print('Getting IM bounds', flush=True)
-        self.im_start, self.im_end = self.get_im_extrema(spectra)
+        self.im_start, self.im_end = util.get_im_extrema(spectra)
 
         self.im_delta = self.im_end - self.im_start
         self.bin_size = self.im_delta / self.num_bins
@@ -100,7 +68,7 @@ class FeatureFinderIonMobility:
         Keyword arguments:
         spec: the spectrum to bin
         """
-        points = self.get_spectrum_points(spec)
+        points = util.get_spectrum_points(spec)
         points = sorted(points, key=itemgetter(3))  # Ascending IM
 
         temp_bins = [[], [[]]]  # New bins to prevent aliasing
@@ -179,30 +147,6 @@ class FeatureFinderIonMobility:
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
             self.exps[1][i].addSpectrum(new_spec)
 
-    def similar_features(self, feature1: Any, feature2: Any) -> bool:
-        """Checks if the RTs and m/zs of two features are within fixed thresholds of each other."""
-        if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
-            return (abs(feature1.getRT() - feature2.getRT()) < self.RT_THRESHOLD and
-                    abs(feature1.getMZ() - feature2.getMZ()) < self.MZ_THRESHOLD)
-        elif isinstance(feature1, list) and isinstance(feature2, list):
-            return (abs(feature1[0] - feature2[0]) < self.RT_THRESHOLD and
-                    abs(feature1[1] - feature2[1]) < self.MZ_THRESHOLD)
-        elif isinstance(feature1, ms.Feature) and isinstance(feature2, list):
-            return (abs(feature1.getRT() - feature2[0]) < self.RT_THRESHOLD and
-                    abs(feature1.getMZ() - feature2[1]) < self.MZ_THRESHOLD)
-        elif isinstance(feature1, list) and isinstance(feature2, ms.Feature):
-            return self.similar_features(feature2, feature1)
-        else:
-            return False
-
-    def polygon_area(self, polygon: List[Tuple[float, float]]) -> float:
-        """Computes the area of a convex polygon using the shoelace formula."""
-        area = 0.0
-        for i in range(len(polygon)):
-            area += polygon[i][0] * polygon[(i + 1) % len(polygon)][1]
-            area -= polygon[i][1] * polygon[(i + 1) % len(polygon)][0]
-        return abs(area) / 2.0
-
     def match_features_internal(self, features: ms.FeatureMap) -> ms.FeatureMap:
         """Matches features in a single bin; intended to correct satellite features.
 
@@ -218,15 +162,15 @@ class FeatureFinderIonMobility:
         for i in range(features.size()):
             feature1 = features[i]
             similar = []
-            max_area = self.polygon_area(feature1.getConvexHull().getHullPoints())
+            max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
             max_feature = feature1
 
             for j in range(i + 1, features.size()):  # Start above to prevent double matching
                 feature2 = features[j]
-                if self.similar_features(feature1, feature2):
+                if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                     similar.append(feature2)
             for feature2 in similar:
-                area = self.polygon_area(feature2.getConvexHull().getHullPoints())
+                area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                 if area > max_area:
                     max_area = area
                     max_feature = feature2
@@ -256,14 +200,14 @@ class FeatureFinderIonMobility:
         for i in range(len(features1)):  # Match the first pass against the second
             for feature1 in features1[i]:
                 similar = []
-                max_area = self.polygon_area(feature1.getConvexHull().getHullPoints())
+                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
                 max_feature = feature1
 
                 for feature2 in features2[i]:  # The half-overlapping bin to the left
-                    if self.similar_features(feature1, feature2):
+                    if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                         similar.append(feature2)
                 for feature2 in similar:
-                    area = self.polygon_area(feature2.getConvexHull().getHullPoints())
+                    area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                     if area > max_area:
                         max_area = area
                         max_feature = feature2
@@ -274,14 +218,14 @@ class FeatureFinderIonMobility:
                     continue
 
                 similar = []
-                max_area = self.polygon_area(feature1.getConvexHull().getHullPoints())
+                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
                 max_feature = feature1
 
                 for feature2 in features2[i + 1]:  # The half-overlapping bin to the right
-                    if self.similar_features(feature1, feature2):
+                    if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                         similar.append(feature2)
                 for feature2 in similar:
-                    area = self.polygon_area(feature2.getConvexHull().getHullPoints())
+                    area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                     if area > max_area:
                         max_area = area
                         max_feature = feature2
@@ -293,22 +237,22 @@ class FeatureFinderIonMobility:
         for i in range(len(features2)):  # Match the second pass against the first
             for feature1 in features2[i]:
                 similar = []
-                max_area = self.polygon_area(feature1.getConvexHull().getHullPoints())
+                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
                 max_feature = feature1
 
                 if i > 0:
                     for feature2 in features1[i - 1]:
-                        if self.similar_features(feature1, feature2):
+                        if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             similar.append(feature2)
                     for feature2 in similar:
-                        area = self.polygon_area(feature2.getConvexHull().getHullPoints())
+                        area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                         if area > max_area:
                             max_area = area
                             max_feature = feature2
 
                     is_new = True  # Avoid duplicate features from the first matching pass
                     for feature3 in matched:
-                        if self.similar_features(max_feature, feature3):
+                        if util.similar_features(max_feature, feature3, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             is_new = False
                             break
 
@@ -318,22 +262,22 @@ class FeatureFinderIonMobility:
                         continue
 
                 similar = []
-                max_area = self.polygon_area(feature1.getConvexHull().getHullPoints())
+                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
                 max_feature = feature1
 
                 if i < len(features1):
                     for feature2 in features1[i]:
-                        if self.similar_features(feature1, feature2):
+                        if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             similar.append(feature2)
                     for feature2 in similar:
-                        area = self.polygon_area(feature2.getConvexHull().getHullPoints())
+                        area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                         if area > max_area:
                             max_area = area
                             max_feature = feature2
 
                     is_new = True
                     for feature3 in matched:
-                        if self.similar_features(max_feature, feature3):
+                        if util.similar_features(max_feature, feature3, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             is_new = False
                             break
 
@@ -368,26 +312,18 @@ class FeatureFinderIonMobility:
         features.setUniqueIds()
         return features
 
-    def has_peaks(self, exp: ms.MSExperiment) -> bool:
-        """Checks if any spectrum in an experiment has peaks."""
-        spectra = exp.getSpectra()
-        for spec in spectra:
-            if spec.size() > 0:
-                return True
-        return False
-
-    def find_features(self, dir: str, peak_pick: str, peak_radius: int, window_size: float, cus_mode: int,
-                      ff_type: str, suppress: bool) -> List[List[ms.FeatureMap]]:
-        """Runs optional peak picking and an existing feature finder on each IM bin.
+    def find_features(self, pp_type: str, peak_radius: int, window_radius: float, pp_mode: str, ff_type: str,
+                      dir: str, debug: bool) -> List[List[ms.FeatureMap]]:
+        """Runs optional peak picking and then an existing feature finder on each IM bin.
 
         Keyword arguments:
-        dif: the directory to write the intermediate output files to
-        peak_pick: the peak picker to use ('none', 'pphr', or 'cus')
+        pp_type: the peak picker to use ('none', 'pphr', or 'custom')
         peak_radius: for the custom peak picker, the minimum peak radius of a peak set
-        window_size: for the custom peak picker, the maximum m/z window size to consider
-        cus_mode: for the custom peak picker, the mode to use (0 for m/z or 1 for intensity)
+        window_radius: for the custom peak picker, the maximum m/z window radius to consider
+        pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
         ff_type: the existing feature finder to use ('centroided')
-        suppress: determine if intermediate output files should be written
+        dir: the directory to write the intermediate output files to
+        debug: determine if intermediate output files should be written
 
         Returns: a list of two lists (for the passes), each containing the features for all of
         their bins.
@@ -396,91 +332,61 @@ class FeatureFinderIonMobility:
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
         pp = ms.PeakPickerHiRes()
 
-        for i in range(self.num_bins):  # First pass
-            new_exp = ms.MSExperiment()
-            if peak_pick != 'none' and not suppress:
-                ms.MzMLFile().store(dir + '/pass1-bin' + str(i) + '-prepick.mzML', self.exps[0][i])
+        nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]
 
-            if peak_pick == 'pphr':
-                pp.pickExperiment(self.exps[0][i], new_exp)
-            elif peak_pick == 'cus':
-                # TODO: replace this line after refactoring peak_picker.py
-                new_exp = peak_picker.peak_pick(self.exps[0][i], peak_radius, window_size, self.MIN_INTENSITY, True,
-                                                False)
-            else:
-                new_exp = self.exps[0][i]
+        for j in range(2):  # Pass index
+            for i in range(nb[j]):  # Bin index
+                new_exp = ms.MSExperiment()
+                if debug:
+                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.mzML', self.exps[j][i])
 
-            # TODO: maybe call the prepicked file '/pass1-bin${i}' and add '-picked' to this file.
-            if not suppress:
-                ms.MzMLFile().store(dir + '/pass1-bin' + str(i) + '.mzML', new_exp)
+                if pp_type == 'pphr':
+                    pp.pickExperiment(self.exps[j][i], new_exp)
+                elif pp_type == 'custom':
+                    # TODO: replace this line after refactoring peak_picker.py
+                    new_exp = ppim.peak_pick(self.exps[j][i], peak_radius, window_radius, self.MIN_INTENSITY, True,
+                                             False)
+                else:
+                    new_exp = self.exps[j][i]
 
-            temp_features = ms.FeatureMap()
-            if self.has_peaks(new_exp):
-                temp_features = self.run_ff(new_exp, ff_type)
+                if pp_type != 'none' and debug:
+                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-picked.mzML', self.exps[j][i])
 
-            temp_features = self.match_features_internal(temp_features)
-            temp_features.setUniqueIds()
-            if not suppress:
-                ms.FeatureXMLFile().store(dir + '/pass1-bin' + str(i) + '.featureXML', temp_features)
+                temp_features = ms.FeatureMap()
+                if util.has_peaks(new_exp):
+                    temp_features = self.run_ff(new_exp, ff_type)
 
-            features[0].append(temp_features)
-            total_features[0] += temp_features
+                temp_features = self.match_features_internal(temp_features)
+                temp_features.setUniqueIds()
+                if debug:
+                    ms.FeatureXMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.featureXML',
+                                              temp_features)
 
-        if self.num_bins == 1:
-            return
+                features[j].append(temp_features)
+                total_features[j] += temp_features
 
-        # TODO: this for loop is essentially the same as above; maybe merge them?
-        for i in range(self.num_bins + 1):  # Second pass
-            new_exp = ms.MSExperiment()
-            if peak_pick != 'none' and not suppress:
-                ms.MzMLFile().store(dir + '/pass2-bin' + str(i) + '-prepick.mzML', self.exps[1][i])
-
-            if peak_pick == 'pphr':
-                pp.pickExperiment(self.exps[1][i], new_exp)
-            elif peak_pick == 'cus':
-                # TODO: replace this line after refactoring peak_picker.py
-                new_exp = peak_picker.peak_pick(self.exps[1][i], peak_radius, window_size, self.MIN_INTENSITY, True,
-                                                False)
-            else:
-                new_exp = self.exps[1][i]
-
-            if not suppress:
-                ms.MzMLFile().store(dir + '/pass2-bin' + str(i) + '.mzML', new_exp)
-
-            temp_features = ms.FeatureMap()
-            if self.has_peaks(new_exp):
-                temp_features = self.run_ff(new_exp, ff_type)
-
-            temp_features = self.match_features_internal(temp_features)
-            temp_features.setUniqueIds()
-            if not suppress:
-                ms.FeatureXMLFile().store(dir + '/pass2-bin' + str(i) + '.featureXML', temp_features)
-
-            features[1].append(temp_features)
-            total_features[1] += temp_features
-
-        if not suppress:
-            total_features[0].setUniqueIds()
-            ms.FeatureXMLFile().store(dir + '/pass1.featureXML', total_features[0])
-            total_features[1].setUniqueIds()
-            ms.FeatureXMLFile().store(dir + '/pass2.featureXML', total_features[1])
+        if debug:
+            for j in range(2):
+                total_features[j].setUniqueIds()
+                ms.FeatureXMLFile().store(dir + '/pass' + str(j + 1) + '.featureXML', total_features[j])
 
         return features[0], features[1]
 
-    def run(self, exp: ms.MSExperiment(), dir: str, num_bins: int, peak_pick: str, peak_radius: int,
-            window_size: float, cus_mode: int, ff_type: str, suppress: bool) -> ms.FeatureMap:
+    def run(self, exp: ms.MSExperiment(), num_bins: int, pp_type: str = 'none', peak_radius: int = 1,
+            window_radius: float = 0.015, pp_mode: str = 'int', ff_type: str = 'centroided', dir: str = '.',
+            debug: bool = False) -> ms.FeatureMap:
         """Runs the feature finder on an experiment.
 
         Keyword arguments:
         exp: the experiment to run the feature finder on
-        dir: the directory to write the intermediate output files to
         num_bins: the number of IM bins to use
-        peak_pick: the peak picker to use ('none', 'pphr', or 'cus')
+        pp_type: the peak picker to use ('none', 'pphr', or 'custom')
         peak_radius: for the custom peak picker, the minimum peak radius of a peak set
-        window_size: for the custom peak picker, the maximum m/z window size to consider
-        cus_mode: for the custom peak picker, the mode to use (0 for m/z or 1 for intensity)
+        window_radius: for the custom peak picker, the maximum m/z window radius to consider
+        pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
         ff_type: the existing feature finder to use ('centroided')
-        suppress: determine if intermediate output files should be written
+        dir: the directory to write the intermediate output files to
+        debug: determine if intermediate output files should be written
 
         Returns: the features found by the feature finder.
         """
@@ -497,8 +403,7 @@ class FeatureFinderIonMobility:
             self.bin_spectrum(spec)
 
         print('Starting feature finding')
-        features1, features2 = self.find_features(dir, peak_pick, peak_radius, window_size, cus_mode, ff_type,
-                                                  suppress)
+        features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, debug)
 
         print('Starting feature matching')
         matched = self.match_features(features1, features2)
@@ -518,19 +423,19 @@ if __name__ == "__main__":
                         help='the output directory')
     parser.add_argument('-n', '--num_bins', action='store', required=True, type=int,
                         help='the number of IM bins to use')
-    parser.add_argument('-f', '--finder', action='store', required=False, type=str, default='centroided',
-                        choices=['centroided'], help='the existing feature finder to use')
+    parser.add_argument('--debug', action='store_true', required=False, default=False,
+                        help='write intermediate mzML and featureXML files')
 
-    parser.add_argument('-p', '--peak_pick', action='store', required=False, type=str, default='none',
-                        choices=['none', 'pphr', 'cus'], help='the peak picker to use')
+    parser.add_argument('-p', '--pp_type', action='store', required=False, type=str, default='none',
+                        choices=['none', 'pphr', 'custom'], help='the peak picker to use')
     parser.add_argument('-r', '--peak_radius', action='store', required=False, type=int, default=1,
                         help='the peak radius for the custom peak picker')
-    parser.add_argument('-w', '--window_size', action='store', required=False, type=float, default=0.015,
-                        help='the window size for the custom peak picker')
-    parser.add_argument('-m', '--cus_mode', action='store', required=False, type=int, default=0,
-                        choices=[0, 1], help='the mode of the custom peak picker')
-    parser.add_argument('-s', '--suppress', action='store_true', required=False, default=False,
-                        help='suppress the writing of intermediate mzML and featureXML files')
+    parser.add_argument('-w', '--window_radius', action='store', required=False, type=float, default=0.015,
+                        help='the window radius for the custom peak picker')
+    parser.add_argument('-m', '--pp_mode', action='store', required=False, type=str, default='int',
+                        choices=['ltr', 'int'], help='the mode of the custom peak picker')
+    parser.add_argument('-f', '--ff_type', action='store', required=False, type=str, default='centroided',
+                        choices=['centroided'], help='the existing feature finder to use')
 
     args = parser.parse_args()
 
@@ -550,7 +455,8 @@ if __name__ == "__main__":
 
     ff = FeatureFinderIonMobility()
     # TODO: maybe make a parameter class so that run_ff doesn't need so many arguments
-    features = ff.run(exp, args.dir, args.num_bins, args.peak_pick, args.peak_radius, args.window_size,
-                         args.cus_mode, args.finder, args.suppress)
+    features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
+                      args.ff_type, args.dir, args.debug)
+
     ms.FeatureXMLFile().store(args.dir + '/' + args.out, features)
     print('Found', features.size(), 'features')
