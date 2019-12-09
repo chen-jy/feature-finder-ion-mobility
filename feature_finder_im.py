@@ -330,7 +330,8 @@ class FeatureFinderIonMobility:
         """
         features = [[], []]
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
-        pp = ms.PeakPickerHiRes()
+        pick_hr = ms.PeakPickerHiRes()
+        pick_im = ppim.PeakPickerIonMobility()
 
         nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]
 
@@ -341,11 +342,10 @@ class FeatureFinderIonMobility:
                     ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.mzML', self.exps[j][i])
 
                 if pp_type == 'pphr':
-                    pp.pickExperiment(self.exps[j][i], new_exp)
+                    pick_hr.pickExperiment(self.exps[j][i], new_exp)
                 elif pp_type == 'custom':
-                    # TODO: replace this line after refactoring peak_picker.py
-                    new_exp = ppim.peak_pick(self.exps[j][i], peak_radius, window_radius, self.MIN_INTENSITY, True,
-                                             False)
+                    new_exp = pick_im.pick_experiment(self.exps[j][i], peak_radius, window_radius, pp_mode,
+                                                      self.MIN_INTENSITY, strict=True)
                 else:
                     new_exp = self.exps[j][i]
 
