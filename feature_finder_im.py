@@ -180,7 +180,115 @@ class FeatureFinderIonMobility:
 
         return matched
 
-    def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> ms.FeatureMap:
+    def match_features_pass(self, features):
+        used = []
+        for bin_idx in range(len(features)):
+            features[bin_idx].sortByPosition()
+            used.append([False] * features[bin_idx].size())
+
+        collected_features = []
+        for bin_idx in range(len(features)):
+            for i in range(features[bin_idx].size()):
+                if used[bin_idx][i]:
+                    continue
+                feature1 = features[bin_idx][i]
+                curr_feature = feature1
+                possible_indices = [(bin_idx, i)]
+                left_idx = bin_idx - 1
+
+                while left_idx >= 0:
+                    similar = []
+                    for j in range(features[left_idx].size()):
+                        if used[left_idx][j]:
+                            continue
+                        feature2 = features[left_idx][j]
+                        if util.similar_features(feature1, feature2) and \
+                                feature2.getIntensity() < curr_feature.getIntensity():
+                            similar.append((feature2, j))
+
+                    if len(similar) == 0:
+                        left_idx += 1
+                        break
+
+                    max_area = util.polygon_area(similar[0][0].getConvexHull().getHullPoints())
+                    max_feature = (similar[0][0], similar[0][1])
+                    for j in range(1, len(similar)):
+                        area = util.polygon_area(similar[j][0].getConvexHull().getHullPoints())
+                        if area > max_area:
+                            max_area = area
+                            max_feature = (similar[j][0], similar[j][1])
+
+                    possible_indices.append((left_idx, max_feature[1]))
+                    curr_feature = max_feature[0]
+                    left_idx -= 1
+
+                curr_feature = feature1
+                right_idx = bin_idx + 1
+
+                while right_idx < len(features):
+                    similar = []
+                    for j in range(features[right_idx].size()):
+                        if used[right_idx][j]:
+                            continue
+                        feature2 = features[right_idx][j]
+                        if util.similar_features(feature1, feature2) and \
+                                feature2.getIntensity() < curr_feature.getIntensity():
+                            similar.append((feature2, j))
+
+                    if len(similar) == 0:
+                        right_idx -= 1
+                        break
+
+                    max_area = util.polygon_area(similar[0][0].getConvexHull().getHullPoints())
+                    max_feature = (similar[0][0], similar[0][1])
+                    for j in range(1, len(similar)):
+                        area = util.polygon_area(similar[j][0].getConvexHull().getHullPoints())
+                        if area > max_area:
+                            max_area = area
+                            max_feature = (similar[j][0], similar[j][1])
+
+                    possible_indices.append((right_idx, max_feature[1]))
+                    curr_feature = max_feature[0]
+                    right_idx += 1
+
+    def match_features(self, features1, features2):
+        pass1 = match_features_pass(features1)  # List[(ms.Feature, int)]
+        pass2 = match_features_pass(features2)  # Tuples are (feature, bin index)
+
+        used = [False] * len(pass2)
+        matched = ms.FeatureMap()
+        feature_bins = []  # Corresponds to matched; holds [feature, bin index]
+
+        for (feature1, bin1) in pass1:
+            similar = []
+            for j in range(len(pass2)):
+                if used[j]:
+                    continue
+                feature2, bin2 = pass2[j][0], pass2[j][1]
+                if util.similar_features(feature1, feature2) and (bin1 == bin2 or bin1 + 1 == bin2):
+                    similar.append((feature2, bin2))
+                    used[j] = True
+
+            max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
+            max_feature = (feature1, bin1)
+            for (feature2, bin2) in similar:
+                area = util.polygon_area(feature2.getConvexHull().getHullPoints())
+                if area > max_area:
+                    max_area = area
+                    max_feature = (feature2, bin2)
+
+            matched.push_back(max_feature[0])
+            feature_bins.append([max_feature[0], max_feature[1]])
+
+        for j in range(len(pass2)):
+            if used[j]:
+                continue
+            matched.push_back(pass2[j][0])
+            feature_bins.append([pass2[j][0], pass2[j][1]])
+
+        return matched, feature_bins
+
+    def match_features_old(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> ms.FeatureMap:
         """Matches features from adjacent bins across two passes.
 
         The feature in each feature set with the largest convex hull becomes the 'representative'
@@ -406,7 +514,7 @@ class FeatureFinderIonMobility:
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, debug)
 
         print('Starting feature matching')
-        matched = self.match_features(features1, features2)
+        matched = self.match_features(features1, features2)[0]
         matched.setUniqueIds()
 
         return matched
