@@ -1,171 +1,189 @@
+"""A feature comparison tool used to benchmark the LC-IMS-MS/MS feature finder.
+"""
+
 import argparse
 import csv
+from functools import singledispatch
+from math import floor
+from operator import itemgetter
+from typing import Any, List
 
 import pyopenms as ms
 
-from operator import itemgetter
-from math import floor
+import common_utils_im as util
 
-def similar_features(feature1, feature2, rt_threshold=5, mz_threshold=0.01):
-    if isinstance(feature1, list) and isinstance(feature2, list):
-        return (abs(feature1[0] - feature2[0]) < rt_threshold and
-                abs(feature1[1] - feature2[1]) < mz_threshold)
-    if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
-        return (abs(feature1.getRT() - feature2.getRT()) < rt_threshold and
-                abs(feature1.getMZ() - feature2.getMZ()) < mz_threshold)
-    if isinstance(feature1, list) and isinstance(feature2, ms.Feature):
-        return (abs(feature1[0] - feature2.getRT()) < rt_threshold and
-                abs(feature1[1] - feature2.getMZ()) < mz_threshold)
-    if isinstance(feature1, ms.Feature) and isinstance(feature2, list):
-        return similar_features(feature2, feature1, rt_threshold, mz_threshold)
 
-    return False
+output_group = ''
+num_common = 0
+times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
 
-def hull_area(hull):
-    area = 0.0
-    for i in range(len(hull)):
-        area += hull[i][0] * hull[(i + 1) % len(hull)][1]
-        area -= hull[i][1] * hull[(i + 1) % len(hull)][0]
-    return abs(area) / 2.0
+
+def reset_stats() -> None:
+    """Resets the global variables."""
+    global num_common, times_matched
+    num_common = 0
+    times_matched = [0, 0, 0]
+
+
+def csv_to_list(input_filename: str) -> List[List[float]]:
+    """Reads a csv file and extracts its feature data.
+
+    The csv file must be formatted like this: RT,m/z,Intensity
+
+    Keyword arguments:
+    input_filename: the csv file to read from
+
+    Returns: a list of lists, where each interior list represents a feature, holding its RT, m/z,
+    intensity, and the value False, in that order.
+    """
+    csv_list, points = [], []
+    with open(input_filename, 'r') as f:
+        reader = csv.reader(f)
+        csv_list = list(reader)
+    for i in range(1, len(csv_list)):  # Skip the header
+        points.append([float(x) for x in csv_list[i]])
+        points[i - 1].append(False)  # If this feature is common
+    return points
+
+
+def reset_csv_list(csv_list: List[List[float]]) -> None:
+    """Resets the common status of every feature in a list."""
+    for i in range(len(csv_list)):
+        csv_list[i][3] = False
+
+
+def print_summary() -> None:
+    """Prints and logs a summary of the most recently run comparison."""
+    global output_group, num_common, times_matched
+    with open(output_group + '-summary.txt', 'w') as f:
+        print('Common features:', num_common)
+        f.write('Common features: %d\n' % num_common)
+        print('One match:', times_matched[0])
+        f.write('One match: %d\n' % times_matched[0])
+        print('Two matches:', times_matched[1])
+        f.write('Two matches: %d\n' % times_matched[1])
+        print('Multiple matches:', times_matched[2])
+        f.write('Multiple matches: %d\n' % times_matched[2])
+
+
+# A stupidly contrived way of achieving function overloading
+@singledispatch
+def cmp1(features2: ms.FeatureMap, features1: ms.FeatureMap) -> None:
+    pass
+
+
+@cmp1.register
+def _(features2: list, features1: ms.FeatureMap) -> None:
+    global output_group, num_common, times_matched
+    reset_stats()
+    reset_csv_list(features2)
+
+    common_features, missing_features = ms.FeatureMap(), ms.FeatureMap()
+
+    for j in range(len(features2)):
+        similar = []
+
+        for feature in features1:
+            if util.similar_features(feature, features2[j]):
+                similar.append(feature)
+
+        if len(similar) == 0: times_matched[0] += 1
+        elif len(similar) == 1: times_matched[1] += 1
+        else: times_matched[2] += 1
+
+        if len(similar) > 0:
+            max_area = util.polygon_area(similar[0].getConvexHull().getHullPoints())
+            max_feature = similar[0]
+
+            for f in similar:
+                area = util.polygon_area(f.getConvexHull().getHullPoints())
+                if area > max_area:
+                    max_area = area
+                    max_feature = f
+
+            common_features.push_back(max_feature)
+            num_common += 1
+        else:
+            f = ms.Feature()
+            f.setRT(features2[j][0])
+            f.setMZ(features2[j][1])
+            f.setIntensity(features2[j][2])
+            missing_features.push_back(f)
+
+    common_features.setUniqueIds()
+    ms.FeatureXMLFile().store(output_group + '-common.featureXML', common_features)
+    missing_features.setUniqueIds()
+    ms.FeatureXMLFile().store(output_group + '-missing.featureXML', missing_features)
+
+    print_summary()
+
+
+@singledispatch
+def cmp2(features2: ms.FeatureMap, features1: list) -> None:
+    pass
+
+
+@cmp2.register
+def _(features2: list, features1: list) -> None:
+    global output_group, num_common, times_matched
+    reset_stats()
+    reset_csv_list(features2)
+
+    for j in range(len(features2)):
+        num_similar = 0
+
+        for i in range(len(features1)):
+            if util.similar_features(features1[i], features2[j]):
+                if features2[j][3] == False:
+                    features2[j][3] = True
+                    num_common += 1
+                num_similar += 1
+
+        if num_similar == 0: times_matched[0] += 1
+        elif num_similar == 1: times_matched[1] += 1
+        else: times_matched[2] += 1
+
+    features2 = sorted(features2, key=itemgetter(2), reverse=True)
+
+    with open(output_group + '.csv', 'w') as f:
+        f.write('RT,m/z,Intensity\n')
+        for j in range(len(features2)):
+            f.write(str.format('{0},{1},{2},{3}\n', features2[j][0], features2[j][1], features2[j][2],
+                                'FOUND' if features2[j][3] else ''))
+
+    print_summary()
+
+
+@singledispatch
+def compare_features(features1: ms.FeatureMap, features2: Any) -> None:
+    cmp1(features2, features1)
+
+
+@compare_features.register
+def _(features1: list, features2: Any) -> None:
+    cmp2(features2, features1)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Feature comparison tool.')
-    parser.add_argument('--input', action='store', required=True, type=str)
-    parser.add_argument('--output', action='store', required=True, type=str)
-    parser.add_argument('--ref', action='store', required=True, type=str)
+    parser.add_argument('-i', '--in', action='store', required=True, type=str, dest='in_',
+                        help='the input features (e.g. found by feature_finder_im)')
+    parser.add_argument('-r', '--ref', action='store', required=True, type=str,
+                        help='the reference features (e.g. found by MaxQuant)')
+    parser.add_argument('-o', '--out', action='store', required=True, type=str,
+                        help='the output group name (not a single filename)')
     args = parser.parse_args()
+    output_group = args.out
 
-    num_common = 0
-    matched = [0, 0, 0] # Zero times, once, multiple times
+    input_mask, ref_mask = ms.FeatureMap(), ms.FeatureMap()
+    input_is_csv = True if args.in_.endswith('.csv') else False
+    ref_is_csv = True if args.ref.endswith('.csv') else False
 
-    #TODO: add the option for ref to be featureXML, not just csv.
+    if input_is_csv: input_mask = csv_to_list(args.in_)
+    else: ms.FeatureXMLFile().load(args.in_, input_mask)
 
-    if args.input[-3:] == 'csv':
-        # Read found features
-        csv_list1, points1 = [], []
-        with open(args.input, 'r') as f:
-            reader = csv.reader(f)
-            csv_list1 = list(reader)
+    if ref_is_csv: ref_mask = csv_to_list(args.ref)
+    else: ms.FeatureXMLFile().load(args.ref, ref_mask)
 
-        for i in range(1, len(csv_list1)):
-            points1.append([float(x) for x in csv_list1[i]])
-
-        # Read reference features
-        csv_list2, points2 = [], []
-        with open(args.ref, 'r') as f:
-            reader = csv.reader(f)
-            csv_list2 = list(reader)
-
-        for i in range(1, len(csv_list2)):
-            points2.append([float(x) for x in csv_list2[i]])
-            # To indicate whether this feature was found or not
-            points2[i - 1].append(False)
-
-        print('Beginning comparisons')
-        for i in range(len(points2)):
-            if i % 50 == 0:
-                print('Processing feature', i + 1, 'of', len(points2))
-
-            num_similar = 0
-            for j in range(len(points1)):
-                if similar_features(points2[i], points1[j]):
-                    if points2[i][3] == False:
-                        points2[i][3] = True
-                        num_common += 1
-                    num_similar += 1
-
-            if num_similar == 0:
-                matched[0] += 1
-            elif num_similar == 1:
-                matched[1] += 1
-            else:
-                matched[2] += 1
-
-        points2 = sorted(points2, key=itemgetter(2), reverse=True)
-
-        with open(args.output, 'w') as f:
-            f.write('RT,m/z,Intensity\n')
-            for i in range(len(points2)):
-                f.write(str.format('{0},{1},{2},{3}\n', points2[i][0], points2[i][1],
-                                   points2[i][2],
-                                   'COMMON' if points2[i][3] else 'MISSING'))
-
-        print(num_common, ' features common. (', sum(matched), ')', sep='')
-
-    elif args.input[-10:] == 'featureXML':
-        found_features = ms.FeatureMap()
-        ms.FeatureXMLFile().load(args.input, found_features)
-
-        # Read reference features
-        csv_list, points = [], []
-        with open(args.ref, 'r') as f:
-            reader = csv.reader(f)
-            csv_list = list(reader)
-
-        for i in range(1, len(csv_list)):
-            points.append([float(x) for x in csv_list[i]])
-
-        common_features, missing_features, unique_features, all_features = \
-            ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap(), ms.FeatureMap()
-
-        print('Beginning comparisons')
-        for i in range(len(points)):
-            if i % 50 == 0:
-                print('Processing feature', i + 1, 'of', len(points))
-
-            similar = []
-            for j in range(found_features.size()):
-                if similar_features(points[i], found_features[j]):
-                    similar.append(found_features[j])
-
-            if len(similar) == 0:
-                matched[0] += 1
-            elif len(similar) == 1:
-                matched[1] += 1
-            else:
-                matched[2] += 1
-
-            if len(similar) > 0:
-                max_feature = similar[0]
-                max_area = hull_area(max_feature.getConvexHull().getHullPoints())
-
-                for f in similar:
-                    ha = hull_area(f.getConvexHull().getHullPoints())
-                    if ha > max_area:
-                        max_area = ha
-                        max_feature = f
-
-                common_features.push_back(max_feature)
-                all_features.push_back(max_feature)
-                num_common += 1
-            else:
-                f = ms.Feature()
-                f.setRT(points[i][0])
-                f.setMZ(points[i][1])
-                f.setIntensity(points[i][2])
-
-                missing_features.push_back(f)
-                all_features.push_back(f)
-
-        for f in found_features:
-            if f not in common_features:
-                unique_features.push_back(f)
-                
-        all_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '-all.featureXML', all_features)
-        missing_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '-missing.featureXML', missing_features)
-        unique_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '-unique.featureXML', unique_features)
-
-        common_features.setUniqueIds()
-        ms.FeatureXMLFile().store(args.output + '-common.featureXML', common_features)
-        print(num_common, ' features common. (', sum(matched), ')', sep='')
-
-    else:
-        print("Error: input file format must be either csv or featureXML")
-        exit(1)
-
-    print("No matches:", matched[0])
-    print("One match:", matched[1])
-    print("Multiple matches:", matched[2])
+    compare_features(input_mask, ref_mask)
+    #compare_features(ref_mask, input_mask)
