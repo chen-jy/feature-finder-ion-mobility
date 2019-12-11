@@ -6,7 +6,7 @@ Extends OpenMS (via pyOpenMS) feature finding capabilities to work on 4D LC-IMS-
 import argparse
 from operator import itemgetter
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pyopenms as ms
 
@@ -180,7 +180,15 @@ class FeatureFinderIonMobility:
 
         return matched
 
-    def match_features_pass(self, features):
+    def match_features_pass(self, features: List[ms.FeatureMap]) -> List[Tuple[ms.Feature, int]]:
+        """Tries to fit features found in a single pass to curves in IM. This should reduce the
+        amount of redundant features.
+
+        Keyword arguments:
+        features: the list of feature maps (one per bin) to match.
+
+        Returns: a list of features and their bin indices for which their intensities were highest.
+        """
         used = []
         for bin_idx in range(len(features)):
             features[bin_idx].sortByPosition()
@@ -192,11 +200,12 @@ class FeatureFinderIonMobility:
                 if used[bin_idx][i]:
                     continue
                 feature1 = features[bin_idx][i]
+                feature_indices = [(bin_idx, i)]  # "Best" features fitting a curve in IM
+                possible_indices = [(bin_idx, i)]  # All possible features fitting the same curve
                 curr_feature = feature1
-                possible_indices = [(bin_idx, i)]
                 left_idx = bin_idx - 1
 
-                while left_idx >= 0:
+                while left_idx >= 0:  # Walk left
                     similar = []
                     for j in range(features[left_idx].size()):
                         if used[left_idx][j]:
@@ -205,27 +214,28 @@ class FeatureFinderIonMobility:
                         if util.similar_features(feature1, feature2) and \
                                 feature2.getIntensity() < curr_feature.getIntensity():
                             similar.append((feature2, j))
+                            possible_indices.append((left_idx, j))
 
-                    if len(similar) == 0:
+                    if len(similar) == 0:  # Cannot extend curve
                         left_idx += 1
                         break
 
                     max_area = util.polygon_area(similar[0][0].getConvexHull().getHullPoints())
-                    max_feature = (similar[0][0], similar[0][1])
-                    for j in range(1, len(similar)):
+                    max_feature = similar[0]
+                    for j in range(len(similar)):
                         area = util.polygon_area(similar[j][0].getConvexHull().getHullPoints())
                         if area > max_area:
                             max_area = area
-                            max_feature = (similar[j][0], similar[j][1])
+                            max_feature = similar[j]
 
-                    possible_indices.append((left_idx, max_feature[1]))
+                    feature_indices.append((left_idx, max_feature[1]))
                     curr_feature = max_feature[0]
                     left_idx -= 1
 
                 curr_feature = feature1
                 right_idx = bin_idx + 1
 
-                while right_idx < len(features):
+                while right_idx < len(features):  # Walk right
                     similar = []
                     for j in range(features[right_idx].size()):
                         if used[right_idx][j]:
@@ -234,26 +244,47 @@ class FeatureFinderIonMobility:
                         if util.similar_features(feature1, feature2) and \
                                 feature2.getIntensity() < curr_feature.getIntensity():
                             similar.append((feature2, j))
+                            possible_indices.append((right_idx, j))
 
                     if len(similar) == 0:
                         right_idx -= 1
                         break
 
                     max_area = util.polygon_area(similar[0][0].getConvexHull().getHullPoints())
-                    max_feature = (similar[0][0], similar[0][1])
-                    for j in range(1, len(similar)):
+                    max_feature = similar[0]
+                    for j in range(len(similar)):
                         area = util.polygon_area(similar[j][0].getConvexHull().getHullPoints())
                         if area > max_area:
                             max_area = area
-                            max_feature = (similar[j][0], similar[j][1])
+                            max_feature = similar[j]
 
-                    possible_indices.append((right_idx, max_feature[1]))
+                    feature_indices.append((right_idx, max_feature[1]))
                     curr_feature = max_feature[0]
                     right_idx += 1
 
-    def match_features(self, features1, features2):
+                # TODO: what if the highest intensity is in the first/last bin?
+                if len(feature_indices) > 0 and (bin_idx - left_idx > 0 and right_idx - bin_idx > 0):
+                    collected_features.append((feature1, bin_idx))
+                    for b_idx, j in possible_indices:
+                        used[b_idx][j] = True
+
+        # TODO: print stats, like number of features reduced
+        return collected_features
+
+    def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> \
+            Tuple[ms.FeatureMap, List[Tuple[ms.Feature, int]]]:
+        """Matches features found by running the feature finder to reduce the amount of redundant
+        features.
+
+        Keyword arguments:
+        features1: the list of feature maps (one per bin) for the first pass
+        features2: the list of feature maps (one per bin) for the second pass
+
+        Returns: the matched feature map, as well as a list of features and their bin indices for
+        which their intensities were highest.
+        """
         pass1 = match_features_pass(features1)  # List[(ms.Feature, int)]
-        pass2 = match_features_pass(features2)  # Tuples are (feature, bin index)
+        pass2 = match_features_pass(features2)  # Interior tuples are (feature, bin index)
 
         used = [False] * len(pass2)
         matched = ms.FeatureMap()
@@ -278,13 +309,12 @@ class FeatureFinderIonMobility:
                     max_feature = (feature2, bin2)
 
             matched.push_back(max_feature[0])
-            feature_bins.append([max_feature[0], max_feature[1]])
+            feature_bins.append((max_feature[0], max_feature[1]))
 
-        for j in range(len(pass2)):
-            if used[j]:
-                continue
-            matched.push_back(pass2[j][0])
-            feature_bins.append([pass2[j][0], pass2[j][1]])
+        for j in range(len(pass2)):  # Features unique to the second pass
+            if not used[j]:
+                matched.push_back(pass2[j][0])
+                feature_bins.append((pass2[j][0], pass2[j][1]))
 
         return matched, feature_bins
 
