@@ -229,20 +229,20 @@ class FeatureFinderIonMobility:
 
                     next_idx += 1
 
-                max_intensity = feature1.getIntensity()
-                max_feature = feature1
+                max_intensity, max_feature, max_idx = feature1.getIntensity(), feature1, bin_idx
                 for b_idx, f_idx in feature_indices:
                     intensity = features[b_idx][f_idx].getIntensity()
                     if intensity > max_intensity:
                         max_intensity = intensity
                         max_feature = features[b_idx][f_idx]
+                        max_idx = b_idx
 
-                matched.append(max_feature)
+                matched.append((max_feature, max_idx))
                 if len(feature_indices) > 1:
-                    not_unique.append(max_feature)
+                    not_unique.append((max_feature, max_idx))
 
         # TODO: print stats, like number of features reduced
-        return matched
+        return not_unique
 
     def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> \
             Tuple[ms.FeatureMap, List[Tuple[ms.Feature, int]]]:
@@ -561,7 +561,7 @@ if __name__ == "__main__":
         exit(1)
     
     exp = ms.MSExperiment()
-    print('Loading mzML input file', flush=True)
+    print('Loading mzML input file.', flush=True)
     ms.MzMLFile().load(args.in_, exp)
 
     ff = FeatureFinderIonMobility()
