@@ -41,6 +41,15 @@ def get_im_extrema(spectra: List[ms.MSSpectrum]) -> Tuple[float, float]:
     return smallest_im, largest_im
 
 
+def polygon_area(polygon: List[Tuple[float, float]]) -> float:
+    """Computes the area of a convex polygon using the shoelace formula."""
+    area = 0.0
+    for i in range(len(polygon)):
+        area += polygon[i][0] * polygon[(i + 1) % len(polygon)][1]
+        area -= polygon[i][1] * polygon[(i + 1) % len(polygon)][0]
+    return abs(area) / 2.0
+
+
 def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz_threshold: float = 0.01) -> bool:
     """Checks if the RTs and m/zs of two features are within fixed thresholds of each other."""
     if isinstance(feature1, ms.Feature) and isinstance(feature2, ms.Feature):
@@ -56,15 +65,6 @@ def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz
         return similar_features(feature2, feature1)
     else:
         return False
-
-
-def polygon_area(polygon: List[Tuple[float, float]]) -> float:
-    """Computes the area of a convex polygon using the shoelace formula."""
-    area = 0.0
-    for i in range(len(polygon)):
-        area += polygon[i][0] * polygon[(i + 1) % len(polygon)][1]
-        area -= polygon[i][1] * polygon[(i + 1) % len(polygon)][0]
-    return abs(area) / 2.0
 
 
 def has_peaks(exp: ms.MSExperiment) -> bool:
