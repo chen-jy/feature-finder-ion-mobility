@@ -20,10 +20,10 @@ class FeatureFinderIonMobility:
     There are no public attributes, and the only public method is run().
     """
 
-    MZ_EPSILON = 0.001
-    MIN_INTENSITY = 0.1
-    RT_THRESHOLD = 5.0
-    MZ_THRESHOLD = 0.01
+    MZ_EPSILON = 0.001  # For binning
+    MIN_INTENSITY = 0.1  # For the custom peak picker
+    RT_THRESHOLD = 5.0  # For feature matching
+    MZ_THRESHOLD = 0.01  # For feature matching
 
     def __init__(self) -> None:
         self.reset()
@@ -96,17 +96,16 @@ class FeatureFinderIonMobility:
                 continue
 
             temp_bins[0][i] = sorted(temp_bins[0][i], key=itemgetter(1))  # Ascending m/z
-            mz_start, num_mz, curr_mz = 0, 0, temp_bins[0][i][0][1]
+            mz_start, curr_mz = 0, temp_bins[0][i][0][1]
             running_intensity = 0
 
             for j in range(len(temp_bins[0][i])):
                 if self.within_epsilon(curr_mz, temp_bins[0][i][j][1]):
-                    num_mz += 1
                     running_intensity += temp_bins[0][i][j][2]
                 else:  # Reached a new m/z slice
                     temp_bins[0][i][mz_start][2] = running_intensity
                     new_bins[0][i].append(list(temp_bins[0][i][mz_start]))
-                    mz_start, num_mz, curr_mz = j, 1, temp_bins[0][i][j][1]
+                    mz_start, curr_mz = j, temp_bins[0][i][j][1]
                     running_intensity = temp_bins[0][i][j][2]
 
             temp_bins[0][i][mz_start][2] = running_intensity  # Take care of the last slice
@@ -124,17 +123,16 @@ class FeatureFinderIonMobility:
                 continue
 
             temp_bins[1][i] = sorted(temp_bins[1][i], key=itemgetter(1))
-            mz_start, num_mz, curr_mz = 0, 0, temp_bins[1][i][0][1]
+            mz_start, curr_mz = 0, temp_bins[1][i][0][1]
             running_intensity = 0
 
             for j in range(len(temp_bins[1][i])):
                 if self.within_epsilon(curr_mz, temp_bins[1][i][j][1]):
-                    num_mz += 1
                     running_intensity += temp_bins[1][i][j][2]
                 else:
                     temp_bins[1][i][mz_start][2] = running_intensity
                     new_bins[1][i].append(list(temp_bins[1][i][mz_start]))
-                    mz_start, num_mz, curr_mz = j, 1, temp_bins[1][i][j][1]
+                    mz_start, curr_mz = j, temp_bins[1][i][j][1]
                     running_intensity = temp_bins[1][i][j][2]
 
             temp_bins[1][i][mz_start][2] = running_intensity
@@ -187,14 +185,15 @@ class FeatureFinderIonMobility:
         Keyword arguments:
         features: the list of feature maps (one per bin) to match.
 
-        Returns: a list of features and their bin indices for which their intensities were highest.
+        Returns: a list of features and their bin indices for which their intensities are highest.
         """
         used = []
         for bin_idx in range(len(features)):
             features[bin_idx].sortByPosition()
             used.append([False] * features[bin_idx].size())
 
-        matched, not_unique = [], []
+        matched = []  # All features
+        not_unique = []  # Features found in at least two contiguous bins
         for bin_idx in range(len(features)):
             for i in range(features[bin_idx].size()):
                 if used[bin_idx][i]:
@@ -213,10 +212,9 @@ class FeatureFinderIonMobility:
                         feature2 = features[next_idx][j]
                         if util.similar_features(feature1, feature2):
                             similar.append((feature2, j))
-                            feature_indices.append((next_idx, j))
                             used[next_idx][j] = True
 
-                    if len(similar) == 0:
+                    if len(similar) == 0:  # Cannot extend the chain any further
                         break
 
                     max_area = util.polygon_area(similar[0][0].getConvexHull().getHullPoints())
@@ -227,6 +225,7 @@ class FeatureFinderIonMobility:
                             max_area = area
                             max_feature = similar[j]
 
+                    feature_indices.append((next_idx, max_feature[1]))
                     next_idx += 1
 
                 max_intensity, max_feature, max_idx = feature1.getIntensity(), feature1, bin_idx
@@ -246,8 +245,7 @@ class FeatureFinderIonMobility:
 
     def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> \
             Tuple[ms.FeatureMap, List[Tuple[ms.Feature, int]]]:
-        """Matches features found by running the feature finder to reduce the amount of redundant
-        features.
+        """Matches found features across passes to reduce the amount of redundant features.
 
         Keyword arguments:
         features1: the list of feature maps (one per bin) for the first pass
@@ -412,10 +410,10 @@ class FeatureFinderIonMobility:
 
         # TODO: tighten up these parameters
         params = ms.FeatureFinder().getParameters(type)
-        params.__setitem__(b'mass_trace:min_spectra', 5)
-        params.__setitem__(b'mass_trace:max_missing', 2)
-        params.__setitem__(b'seed:min_score', 0.5)
-        params.__setitem__(b'feature:min_score', 0.5)
+        params.__setitem__(b'mass_trace:min_spectra', 5)  # Default is 10
+        params.__setitem__(b'mass_trace:max_missing', 2)  # Default is 1
+        params.__setitem__(b'seed:min_score', 0.5)  # Default is 0.8
+        params.__setitem__(b'feature:min_score', 0.5)  # Default is 0.7
     
         exp.updateRanges()
         ff.run(type, exp, features, params, seeds)
@@ -467,6 +465,7 @@ class FeatureFinderIonMobility:
                 if util.has_peaks(new_exp):
                     temp_features = self.run_ff(new_exp, ff_type)
 
+                # TODO: test the results of removing this line
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
                 if debug:
