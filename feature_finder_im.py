@@ -409,11 +409,11 @@ class FeatureFinderIonMobility:
         features, seeds = ms.FeatureMap(), ms.FeatureMap()
 
         # TODO: tighten up these parameters
-        params = ms.FeatureFinder().getParameters(type)
-        params.__setitem__(b'mass_trace:min_spectra', 5)  # Default is 10
-        params.__setitem__(b'mass_trace:max_missing', 2)  # Default is 1
-        params.__setitem__(b'seed:min_score', 0.5)  # Default is 0.8
-        params.__setitem__(b'feature:min_score', 0.5)  # Default is 0.7
+        params = ms.FeatureFinder().getParameters(type)  # default (Leon's)
+        params.__setitem__(b'mass_trace:min_spectra', 7)  # 10 (5)
+        params.__setitem__(b'mass_trace:max_missing', 1)  # 1 (2)
+        params.__setitem__(b'seed:min_score', 0.65)  # 0.8 (0.5)
+        params.__setitem__(b'feature:min_score', 0.6)  # 0.7 (0.5)
     
         exp.updateRanges()
         ff.run(type, exp, features, params, seeds)
@@ -422,7 +422,7 @@ class FeatureFinderIonMobility:
         return features
 
     def find_features(self, pp_type: str, peak_radius: int, window_radius: float, pp_mode: str, ff_type: str,
-                      dir: str, debug: bool) -> List[List[ms.FeatureMap]]:
+                      dir: str, filter: str, debug: bool) -> List[List[ms.FeatureMap]]:
         """Runs optional peak picking and then an existing feature finder on each IM bin.
 
         Keyword arguments:
@@ -432,6 +432,7 @@ class FeatureFinderIonMobility:
         pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
         ff_type: the existing feature finder to use ('centroided')
         dir: the directory to write the intermediate output files to
+        filter: the noise filter to use
         debug: determine if intermediate output files should be written
 
         Returns: a list of two lists (for the passes), each containing the features for all of
@@ -439,6 +440,9 @@ class FeatureFinderIonMobility:
         """
         features = [[], []]
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
+
+        filter_g = ms.GaussFilter()
+        filter_s = ms.SavitzkyGolayFilter()
         pick_hr = ms.PeakPickerHiRes()
         pick_im = ppim.PeakPickerIonMobility()
 
@@ -450,6 +454,17 @@ class FeatureFinderIonMobility:
                 if debug:
                     ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.mzML', self.exps[j][i])
 
+                # Optional noise filtering
+                if filter == 'gauss':
+                    filter_g.filterExperiment(self.exps[j][i])
+                elif filter == 'sgolay':
+                    filter_s.filterExperiment(self.exps[j][i])
+
+                if filter != 'none' and debug:
+                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-filtered.mzML',
+                                        self.exps[j][i])
+
+                # Optional peak picking
                 if pp_type == 'pphr':
                     pick_hr.pickExperiment(self.exps[j][i], new_exp)
                 elif pp_type == 'custom':
@@ -461,11 +476,11 @@ class FeatureFinderIonMobility:
                 if pp_type != 'none' and debug:
                     ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-picked.mzML', self.exps[j][i])
 
+                # Feature finding
                 temp_features = ms.FeatureMap()
                 if util.has_peaks(new_exp):
                     temp_features = self.run_ff(new_exp, ff_type)
 
-                # TODO: test the results of removing this line
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
                 if debug:
@@ -484,7 +499,7 @@ class FeatureFinderIonMobility:
 
     def run(self, exp: ms.MSExperiment(), num_bins: int, pp_type: str = 'none', peak_radius: int = 1,
             window_radius: float = 0.015, pp_mode: str = 'int', ff_type: str = 'centroided', dir: str = '.',
-            debug: bool = False) -> ms.FeatureMap:
+            filter: str = 'none', debug: bool = False) -> ms.FeatureMap:
         """Runs the feature finder on an experiment.
 
         Keyword arguments:
@@ -496,6 +511,7 @@ class FeatureFinderIonMobility:
         pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
         ff_type: the existing feature finder to use ('centroided')
         dir: the directory to write the intermediate output files to
+        filter: the noise filter to use
         debug: determine if intermediate output files should be written
 
         Returns: the features found by the feature finder.
@@ -513,7 +529,8 @@ class FeatureFinderIonMobility:
             self.bin_spectrum(spec)
 
         print('Starting feature finding.')
-        features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, debug)
+        features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
+                                                  debug)
 
         print('Starting feature matching.')
         matched = self.match_features(features1, features2)[0]
@@ -533,8 +550,6 @@ if __name__ == "__main__":
                         help='the output directory')
     parser.add_argument('-n', '--num_bins', action='store', required=True, type=int,
                         help='the number of IM bins to use')
-    parser.add_argument('--debug', action='store_true', required=False, default=False,
-                        help='write intermediate mzML and featureXML files')
 
     parser.add_argument('-p', '--pp_type', action='store', required=False, type=str, default='none',
                         choices=['none', 'pphr', 'custom'], help='the peak picker to use')
@@ -544,8 +559,14 @@ if __name__ == "__main__":
                         help='the window radius for the custom peak picker')
     parser.add_argument('-m', '--pp_mode', action='store', required=False, type=str, default='int',
                         choices=['ltr', 'int'], help='the mode of the custom peak picker')
+
     parser.add_argument('-f', '--ff_type', action='store', required=False, type=str, default='centroided',
                         choices=['centroided'], help='the existing feature finder to use')
+    parser.add_argument('-e', '--filter', action='store', required=False, type=str, default='none',
+                        choices=['none', 'gauss', 'sgolay'], help='the noise filter to use')
+
+    parser.add_argument('--debug', action='store_true', required=False, default=False,
+                        help='write intermediate mzML and featureXML files')
 
     args = parser.parse_args()
 
@@ -566,7 +587,7 @@ if __name__ == "__main__":
     ff = FeatureFinderIonMobility()
     # TODO: maybe make a parameter class so that run_ff doesn't need so many arguments
     features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
-                      args.ff_type, args.dir, args.debug)
+                      args.ff_type, args.dir, args.filter, args.debug)
 
     ms.FeatureXMLFile().store(args.dir + '/' + args.out, features)
     print('Found', features.size(), 'features')
