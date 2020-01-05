@@ -58,10 +58,10 @@ def print_summary() -> None:
     with open(output_group + '-summary.txt', 'w') as f:
         print('Common features:', num_common)
         f.write('Common features: %d\n' % num_common)
-        print('One match:', times_matched[0])
-        f.write('One match: %d\n' % times_matched[0])
-        print('Two matches:', times_matched[1])
-        f.write('Two matches: %d\n' % times_matched[1])
+        print('No matches:', times_matched[0])
+        f.write('No matches: %d\n' % times_matched[0])
+        print('One match:', times_matched[1])
+        f.write('One match: %d\n' % times_matched[1])
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
 
