@@ -421,15 +421,24 @@ class FeatureFinderIonMobility:
         features.setUniqueIds()
         return features
 
-    def run_ffm(self, exp: ms.MSExperiment) -> None:
+    def run_ffm(self, exp: ms.MSExperiment) -> ms.FeatureMap:
         """Runs FeatureFinderMultiplex on an experiment.
 
         Keyword arguments:
         exp: the experiment to run the feature finder on
+
+        Returns: the features in the experiment.
         """
         ffm = ms.FeatureFinderMultiplexAlgorithm()
+        params = ffm.getDefaults()
+        params.setValue(b'algorithm:labels', b'[]')
+        params.setValue(b'algorithm:spectrum_type', b'centroid')
+        ffm.setParameters(params)
+
         _ = False
         ffm.run(exp, _)
+
+        return ffm.getFeatureMap()
 
     def find_features(self, pp_type: str, peak_radius: int, window_radius: float, pp_mode: str, ff_type: str,
                       dir: str, filter: str, debug: bool) -> List[List[ms.FeatureMap]]:
