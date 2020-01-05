@@ -409,17 +409,27 @@ class FeatureFinderIonMobility:
         features, seeds = ms.FeatureMap(), ms.FeatureMap()
 
         # TODO: tighten up these parameters
-        params = ms.FeatureFinder().getParameters(type)  # default (Leon's)
-        params.__setitem__(b'mass_trace:min_spectra', 7)  # 10 (5)
-        params.__setitem__(b'mass_trace:max_missing', 1)  # 1 (2)
-        params.__setitem__(b'seed:min_score', 0.65)  # 0.8 (0.5)
-        params.__setitem__(b'feature:min_score', 0.6)  # 0.7 (0.5)
+        params = ms.FeatureFinder().getParameters(type)  # default (Leon's) (modified)
+        params.__setitem__(b'mass_trace:min_spectra', 7)  # 10 (5) (7)
+        params.__setitem__(b'mass_trace:max_missing', 1)  # 1 (2) (1)
+        params.__setitem__(b'seed:min_score', 0.65)  # 0.8 (0.5) (0.65)
+        params.__setitem__(b'feature:min_score', 0.6)  # 0.7 (0.5) (0.6)
     
         exp.updateRanges()
         ff.run(type, exp, features, params, seeds)
 
         features.setUniqueIds()
         return features
+
+    def run_ffm(self, exp: ms.MSExperiment) -> None:
+        """Runs FeatureFinderMultiplex on an experiment.
+
+        Keyword arguments:
+        exp: the experiment to run the feature finder on
+        """
+        ffm = ms.FeatureFinderMultiplexAlgorithm()
+        _ = False
+        ffm.run(exp, _)
 
     def find_features(self, pp_type: str, peak_radius: int, window_radius: float, pp_mode: str, ff_type: str,
                       dir: str, filter: str, debug: bool) -> List[List[ms.FeatureMap]]:
@@ -474,12 +484,16 @@ class FeatureFinderIonMobility:
                     new_exp = self.exps[j][i]
 
                 if pp_type != 'none' and debug:
-                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-picked.mzML', self.exps[j][i])
+                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-picked.mzML', new_exp)
 
                 # Feature finding
                 temp_features = ms.FeatureMap()
                 if util.has_peaks(new_exp):
-                    temp_features = self.run_ff(new_exp, ff_type)
+                    if ff_type == 'centroided':
+                        temp_features = self.run_ff(new_exp, ff_type)
+                    elif ff_type == 'multiplex':
+                        self.run_ffm(new_exp)
+                        temp_features = new_exp
 
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
@@ -561,7 +575,7 @@ if __name__ == "__main__":
                         choices=['ltr', 'int'], help='the mode of the custom peak picker')
 
     parser.add_argument('-f', '--ff_type', action='store', required=False, type=str, default='centroided',
-                        choices=['centroided'], help='the existing feature finder to use')
+                        choices=['centroided', 'multiplex'], help='the existing feature finder to use')
     parser.add_argument('-e', '--filter', action='store', required=False, type=str, default='none',
                         choices=['none', 'gauss', 'sgolay'], help='the noise filter to use')
 

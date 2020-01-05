@@ -116,7 +116,8 @@ class PeakPickerIonMobility:
             total_position = 0
             for j in range(low_bound, high_bound + 1):
                 picked[j] = True
-                total_position += spec[j].getPos() * (spec[j].getIntensity() / total_intensity)
+                if total_intensity != 0:
+                    total_position += spec[j].getPos() * (spec[j].getIntensity() / total_intensity)
 
             p = ms.Peak1D()
             p.setIntensity(total_intensity)
