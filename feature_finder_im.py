@@ -555,6 +555,10 @@ class FeatureFinderIonMobility:
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
                                                   debug)
 
+        if self.num_bins == 1:  # Matching between passes for one bin results in no features
+            features1[0].setUniqueIds()
+            return features1[0]
+
         print('Starting feature matching.')
         matched = self.match_features(features1, features2)[0]
         matched.setUniqueIds()
