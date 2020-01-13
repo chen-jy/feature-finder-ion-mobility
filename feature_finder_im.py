@@ -35,6 +35,7 @@ class FeatureFinderIonMobility:
         self.num_bins, self.bin_size = 0, 0
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
+        #self.im_scan_nums = [[], []]  # Keep the start and end IM scan numbers for each bin
 
     def setup_bins(self, spectra: List[ms.MSSpectrum]) -> None:
         """Sets up the IM bins for feature finding.
@@ -240,8 +241,7 @@ class FeatureFinderIonMobility:
                 if len(feature_indices) > 1:
                     not_unique.append((max_feature, max_idx))
 
-        # TODO: print stats, like number of features reduced
-        return not_unique
+        return matched
 
     def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> \
             Tuple[ms.FeatureMap, List[Tuple[ms.Feature, int]]]:
@@ -408,7 +408,6 @@ class FeatureFinderIonMobility:
         ff.setLogType(ms.LogType.NONE)
         features, seeds = ms.FeatureMap(), ms.FeatureMap()
 
-        # TODO: tighten up these parameters
         params = ms.FeatureFinder().getParameters(type)  # default (Leon's) (modified)
         params.__setitem__(b'mass_trace:min_spectra', 7)  # 10 (5) (7)
         params.__setitem__(b'mass_trace:max_missing', 1)  # 1 (2) (1)
@@ -461,9 +460,19 @@ class FeatureFinderIonMobility:
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
 
         filter_g = ms.GaussFilter()
+        params_g = filter_g.getDefaults()
+        params_g.setValue(b'ppm_tolerance', 20.0)
+        params_g.setValue(b'use_ppm_tolerance', b'true')
+        filter_g.setParameters(params_g)
+        
         filter_s = ms.SavitzkyGolayFilter()
+        params_s = filter_s.getDefaults()
+        params_s.setValue(b'frame_length', 7)
+        params_s.setValue(b'polynomial_order', 4)
+        filter_s.setParameters(params_s)
+
         pick_hr = ms.PeakPickerHiRes()
-        pick_im = ppim.PeakPickerIonMobility()
+        pick_im = ppim.PeakPickerIonMobility()  # Maybe use a parameter class?
 
         nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]
 
