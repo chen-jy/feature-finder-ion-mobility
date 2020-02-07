@@ -17,6 +17,9 @@ output_group = ''
 num_common = 0
 times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
 
+num_bins = 0
+im_start, im_end = 0, 0
+
 
 def reset_stats() -> None:
     """Resets the global variables."""
@@ -28,19 +31,19 @@ def reset_stats() -> None:
 def csv_to_list(input_filename: str) -> List[List[float]]:
     """Reads a csv file and extracts its feature data.
 
-    The csv file must be formatted like this: RT,m/z,Intensity
+    The csv file must be formatted like this: Retention time, mass to charge, ion mobility index
 
     Keyword arguments:
     input_filename: the csv file to read from
 
     Returns: a list of lists, where each interior list represents a feature, holding its RT, m/z,
-    intensity, and the value False, in that order.
+    ion mobility (1/K_0), and the value False, in that order.
     """
     csv_list, points = [], []
     with open(input_filename, 'r') as f:
         reader = csv.reader(f)
         csv_list = list(reader)
-    for i in range(1, len(csv_list)):  # Skip the header
+    for i in range(len(csv_list)):  # Assumes no header
         points.append([float(x) for x in csv_list[i]])
         points[i - 1].append(False)  # If this feature is common
     return points
@@ -69,7 +72,7 @@ def print_summary() -> None:
 # A stupidly contrived way of achieving function overloading
 @singledispatch
 def cmp1(features2: ms.FeatureMap, features1: ms.FeatureMap) -> None:
-    pass
+    raise NotImplementedError
 
 
 @cmp1.register
@@ -120,7 +123,7 @@ def _(features2: list, features1: ms.FeatureMap) -> None:
 
 @singledispatch
 def cmp2(features2: ms.FeatureMap, features1: list) -> None:
-    pass
+    raise NotImplementedError
 
 
 @cmp2.register
@@ -165,15 +168,26 @@ def _(features1: list, features2: Any) -> None:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Feature comparison tool.')
+    parser = argparse.ArgumentParser(description='Feature comparison tool.')  # Currently in IM REQUIRED mode
     parser.add_argument('-i', '--in', action='store', required=True, type=str, dest='in_',
                         help='the input features (e.g. found by feature_finder_im)')
     parser.add_argument('-r', '--ref', action='store', required=True, type=str,
                         help='the reference features (e.g. found by MaxQuant)')
     parser.add_argument('-o', '--out', action='store', required=True, type=str,
                         help='the output group name (not a single filename)')
+    parser.add_argument('-n', '--num_bins', action='store', required=True, type=str,
+                        help='the number of ion mobility bins used')
+    parser.add_argument('-s', '--im_start', action='store', required=True, type=float,
+                        help='the lower ion mobility bound')
+    parser.add_argument('-t', '--im_stop', action='store', required=True, type=float,
+                        help='the upper ion mobility bound')
     args = parser.parse_args()
     output_group = args.out
+
+    num_bins = args.num_bins
+    im_start, im_stop = args.im_start, args.im_stop
+
+    print('WARNING: this tool only supports im-im comparisons for list-list at this point\n')
 
     input_mask, ref_mask = ms.FeatureMap(), ms.FeatureMap()
     input_is_csv = True if args.in_.endswith('.csv') else False
