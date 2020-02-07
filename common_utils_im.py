@@ -67,6 +67,10 @@ def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz
         return False
 
 
+def different_features_im(feature1: List[float], feature2: List[float]) -> bool:
+    return feature1[2] != feature2[2]
+
+
 def has_peaks(exp: ms.MSExperiment) -> bool:
     """Checks if any spectrum in an experiment has peaks."""
     spectra = exp.getSpectra()
