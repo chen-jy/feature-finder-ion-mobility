@@ -4,6 +4,7 @@ Extends OpenMS (via pyOpenMS) feature finding capabilities to work on 4D LC-IMS-
 """
 
 import argparse
+import csv
 from operator import itemgetter
 import os
 from typing import List, Optional, Tuple
@@ -569,10 +570,19 @@ class FeatureFinderIonMobility:
             return features1[0]
 
         print('Starting feature matching.')
-        matched = self.match_features(features1, features2)[0]
-        matched.setUniqueIds()
+        all_features, feature_bins = self.match_features(features1, features2)
+        all_features.setUniqueIds()
 
-        return matched
+        indexed_bins = []
+        for feature, bin in feature_bins:
+            row = [feature.getRT(), feature.getMZ(), bin]
+            indexed_bins.append(row)
+
+        with open(dir + '/feature-bins.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(indexed_bins)
+
+        return all_features
 
 
 if __name__ == "__main__":
