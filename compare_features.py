@@ -15,16 +15,18 @@ import common_utils_im as util
 
 output_group = ''
 num_common = 0
+overlapping = []
 times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
 
 num_bins = 0
-im_start, im_end = 0, 0
+im_start, im_stop = 0, 0
 
 
 def reset_stats() -> None:
     """Resets the global variables."""
     global num_common, times_matched
     num_common = 0
+    overlapping = []
     times_matched = [0, 0, 0]
 
 
@@ -43,7 +45,7 @@ def csv_to_list(input_filename: str) -> List[List[float]]:
     with open(input_filename, 'r') as f:
         reader = csv.reader(f)
         csv_list = list(reader)
-    for i in range(len(csv_list)):  # Assumes no header
+    for i in range(1, len(csv_list)):  # Skip the header
         points.append([float(x) for x in csv_list[i]])
         points[i - 1].append(False)  # If this feature is common
     return points
@@ -57,7 +59,7 @@ def reset_csv_list(csv_list: List[List[float]]) -> None:
 
 def print_summary() -> None:
     """Prints and logs a summary of the most recently run comparison."""
-    global output_group, num_common, times_matched
+    global output_group, num_common, overlapping, times_matched
     with open(output_group + '-summary.txt', 'w') as f:
         print('Common features:', num_common)
         f.write('Common features: %d\n' % num_common)
@@ -67,6 +69,23 @@ def print_summary() -> None:
         f.write('One match: %d\n' % times_matched[1])
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
+
+    overlapping = sorted(overlapping, key=itemgetter(1))
+    with open(output_group + '-overlapping.txt', 'w') as f:
+        for row in overlapping:
+            f.write(f'{row}\n')
+
+
+def convert_to_bidx(im: float) -> int:
+    """Converts an ion mobility value (1/K_0) to its bin index.
+    
+    Keyword arguments:
+    im: the ion mobility value to convert
+
+    Returns: the bin index in which the IM value would exist.    
+    """
+    idx = int((im - im_start) / ((im_stop - im_start) / num_bins))
+    return idx if idx < num_bins else num_bins - 1
 
 
 # A stupidly contrived way of achieving function overloading
@@ -128,25 +147,33 @@ def cmp2(features2: ms.FeatureMap, features1: list) -> None:
 
 @cmp2.register
 def _(features2: list, features1: list) -> None:
-    global output_group, num_common, times_matched
+    global output_group, num_common, overlapping, times_matched
     reset_stats()
     reset_csv_list(features2)
 
     for j in range(len(features2)):
+        features2[j][2] = convert_to_bidx(features2[j][2])
         num_similar = 0
 
         for i in range(len(features1)):
-            if util.similar_features(features1[i], features2[j]):
-                if features2[j][3] == False:
-                    features2[j][3] = True
+            if (util.similar_features(features1[i], features2[j]) and not
+                util.different_features_im(features1[i], features2[j])):
+                if features1[i][3] == False:
+                    features1[i][3] = True
                     num_common += 1
                 num_similar += 1
+
+            #if util.similar_features(features1[i], features2[j]):
+            #    if features1[i][3] == False:
+            #        features1[i][3] = True
+            #        num_common += 1
+            #    num_similar += 1
 
         if num_similar == 0: times_matched[0] += 1
         elif num_similar == 1: times_matched[1] += 1
         else: times_matched[2] += 1
 
-    features2 = sorted(features2, key=itemgetter(2), reverse=True)
+    #features2 = sorted(features2, key=itemgetter(2), reverse=True)
 
     with open(output_group + '.csv', 'w') as f:
         f.write('RT,m/z,Intensity\n')
@@ -175,7 +202,7 @@ if __name__ == '__main__':
                         help='the reference features (e.g. found by MaxQuant)')
     parser.add_argument('-o', '--out', action='store', required=True, type=str,
                         help='the output group name (not a single filename)')
-    parser.add_argument('-n', '--num_bins', action='store', required=True, type=str,
+    parser.add_argument('-n', '--num_bins', action='store', required=True, type=int,
                         help='the number of ion mobility bins used')
     parser.add_argument('-s', '--im_start', action='store', required=True, type=float,
                         help='the lower ion mobility bound')
