@@ -38,13 +38,15 @@ class FeatureFinderIonMobility:
         self.im_delta, self.im_offset = 0, 0
         #self.im_scan_nums = [[], []]  # Keep the start and end IM scan numbers for each bin
 
-    def setup_bins(self, spectra: List[ms.MSSpectrum]) -> None:
+    def setup_bins(self, spectra: List[ms.MSSpectrum]) -> Tuple[float, float]:
         """Sets up the IM bins for feature finding.
 
         Keyword arguments:
         spectra: the list of spectra to bin
+
+        Returns: the minimum and maximum ion mobility values.
         """
-        print('Getting IM bounds.', flush=True)
+        print('Getting IM bounds.', end=' ', flush=True)
         self.im_start, self.im_end = util.get_im_extrema(spectra)
 
         self.im_delta = self.im_end - self.im_start
@@ -57,6 +59,12 @@ class FeatureFinderIonMobility:
                 self.exps[j].append(ms.MSExperiment())
         self.bins[1].append([])  # The last half-bin in the second pass
         self.exps[1].append(ms.MSExperiment())
+
+        print('Done', flush=True)
+        print('\tSmallest IM:', self.im_start)
+        print('\tLargest IM:', self.im_end, end='\n\n')
+
+        return self.im_start, self.im_end
 
     def within_epsilon(self, target: float, var: float) -> bool:
         """Checks if var is within the m/z epsilon of target."""
@@ -286,9 +294,38 @@ class FeatureFinderIonMobility:
         for j in range(len(pass2)):  # Features unique to the second pass
             if not used[j]:
                 matched.push_back(pass2[j][0])
+                if pass2[j][1] >= self.num_bins:
+                    pass2[j][1] = self.num_bins - 1
                 feature_bins.append(pass2[j])
 
-        return matched, feature_bins
+        cleaned, clean_bins = ms.FeatureMap(), []
+        used = [False] * len(feature_bins)
+
+        for i in range(len(feature_bins)):
+            if used[i]:
+                continue
+            used[i] = True
+
+            similar = []
+            for j in range(len(feature_bins)):
+                if used[j]:
+                    continue
+                if (util.similar_features(feature_bins[i][0], feature_bins[j][0]) and
+                    feature_bins[i][1] == feature_bins[j][1]):
+                    similar.append(feature_bins[j])
+                    used[j] = True
+
+            max_feature, max_area = feature_bins[i], \
+                                    util.polygon_area(feature_bins[i][0].getConvexHull().getHullPoints())
+            for feature in similar:
+                area = util.polygon_area(feature[0].getConvexHull().getHullPoints())
+                if area > max_area:
+                    max_feature, max_area = feature, area
+
+            cleaned.push_back(max_feature[0])
+            clean_bins.append(max_feature)
+
+        return cleaned, clean_bins
 
     def match_features_old(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> ms.FeatureMap:
         """Matches features from adjacent bins across two passes.
@@ -553,25 +590,31 @@ class FeatureFinderIonMobility:
         self.num_bins = num_bins
 
         spectra = exp.getSpectra()
-        self.setup_bins(spectra)
+        start, stop = self.setup_bins(spectra)
+        with open(dir + '/im-meta.txt', 'w') as file:
+            file.write(f'{start}\n{stop}\n')
 
-        print('Starting binning.')
+        print('Starting binning.', flush=True)
         for spec in spectra:
             if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
                 continue
+            print('Binning RT', spec.getRT(), flush=True)
             self.bin_spectrum(spec)
+        print('Done')
 
-        print('Starting feature finding.')
+        print('Starting feature finding.', end=' ', flush=True)
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
                                                   debug)
+        print('Done')
 
         if self.num_bins == 1:  # Matching between passes for one bin results in no features
             features1[0].setUniqueIds()
             return features1[0]
 
-        print('Starting feature matching.')
+        print('Starting feature matching.', end=' ', flush=True)
         all_features, feature_bins = self.match_features(features1, features2)
         all_features.setUniqueIds()
+        print('Done')
 
         indexed_bins = []
         for feature, bin in feature_bins:
@@ -580,6 +623,7 @@ class FeatureFinderIonMobility:
 
         with open(dir + '/feature-bins.csv', 'w', newline='') as file:
             writer = csv.writer(file)
+            writer.writerow('RT,m/z,im')
             writer.writerows(indexed_bins)
 
         return all_features
@@ -627,8 +671,9 @@ if __name__ == "__main__":
         exit(1)
     
     exp = ms.MSExperiment()
-    print('Loading mzML input file.', flush=True)
+    print('Loading mzML input file.', end=' ', flush=True)
     ms.MzMLFile().load(args.in_, exp)
+    print('Done', flush=True)
 
     ff = FeatureFinderIonMobility()
     # TODO: maybe make a parameter class so that run_ff doesn't need so many arguments
