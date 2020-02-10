@@ -17,6 +17,8 @@ output_group = ''
 num_common = 0
 overlapping = []
 times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
+times_skipped = 0  # Similar RT and m/z but different IM bin
+within_one_bin = 0  # For times_skipped, if the bin index only differs by one
 
 num_bins = 0
 im_start, im_stop = 0, 0
@@ -28,6 +30,8 @@ def reset_stats() -> None:
     num_common = 0
     overlapping = []
     times_matched = [0, 0, 0]
+    times_skipped = 0
+    within_one_bin = 0
 
 
 def csv_to_list(input_filename: str) -> List[List[float]]:
@@ -59,7 +63,7 @@ def reset_csv_list(csv_list: List[List[float]]) -> None:
 
 def print_summary() -> None:
     """Prints and logs a summary of the most recently run comparison."""
-    global output_group, num_common, overlapping, times_matched
+    global output_group, num_common, overlapping, times_matched, times_skipped, within_one_bin
     with open(output_group + '-summary.txt', 'w') as f:
         print('Common features:', num_common)
         f.write('Common features: %d\n' % num_common)
@@ -70,7 +74,11 @@ def print_summary() -> None:
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
 
-    overlapping = sorted(overlapping, key=itemgetter(1))
+        print('Times skipped: %d' % times_skipped)
+        f.write('Times skipped: %d\n' % times_skipped)
+        print('Within one bin: %d' % within_one_bin)
+        f.write('Within one bin: %d\n' % within_one_bin)
+
     with open(output_group + '-overlapping.txt', 'w') as f:
         for row in overlapping:
             f.write(f'{row}\n')
@@ -147,33 +155,39 @@ def cmp2(features2: ms.FeatureMap, features1: list) -> None:
 
 @cmp2.register
 def _(features2: list, features1: list) -> None:
-    global output_group, num_common, overlapping, times_matched
+    global output_group, num_common, overlapping, times_matched, times_skipped, within_one_bin
     reset_stats()
     reset_csv_list(features2)
 
     for j in range(len(features2)):
         features2[j][2] = convert_to_bidx(features2[j][2])
-        num_similar = 0
+        similar = [features2[j]]
+        local_within = 0
 
         for i in range(len(features1)):
-            if (util.similar_features(features1[i], features2[j]) and not
-                util.different_features_im(features1[i], features2[j])):
-                if features1[i][3] == False:
-                    features1[i][3] = True
-                    num_common += 1
-                num_similar += 1
+            if util.similar_features(features1[i], features2[j]):
+                if not util.different_features_im(features1[i], features2[j]):
+                    if not features1[i][3]:
+                        features1[i][3] = True
+                        num_common += 1
+                    similar.append(features1[i])
+                else:
+                    times_skipped += 1
+                    if abs(features1[i][2] - features2[j][2]) == 1:
+                        local_within += 1
 
-            #if util.similar_features(features1[i], features2[j]):
-            #    if features1[i][3] == False:
-            #        features1[i][3] = True
-            #        num_common += 1
-            #    num_similar += 1
+        if len(similar) == 1:
+            times_matched[0] += 1
+            if local_within > 0:
+                within_one_bin += 1
+        elif len(similar) == 2:
+            times_matched[1] += 1
+        else:
+            times_matched[2] += 1
+            overlapping.extend(similar)
+            overlapping.append('END FEATURE GROUP')
 
-        if num_similar == 0: times_matched[0] += 1
-        elif num_similar == 1: times_matched[1] += 1
-        else: times_matched[2] += 1
-
-    #features2 = sorted(features2, key=itemgetter(2), reverse=True)
+    #features2 = sorted(features2, key=itemgetter(2), reverse=True)  # Decreasing intensity
 
     with open(output_group + '.csv', 'w') as f:
         f.write('RT,m/z,Intensity\n')
