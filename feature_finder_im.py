@@ -295,7 +295,7 @@ class FeatureFinderIonMobility:
             if not used[j]:
                 matched.push_back(pass2[j][0])
                 if pass2[j][1] >= self.num_bins:
-                    pass2[j][1] = self.num_bins - 1
+                    pass2[j] = (pass2[j][0], self.num_bins - 1)
                 feature_bins.append(pass2[j])
 
         cleaned, clean_bins = ms.FeatureMap(), []
@@ -623,7 +623,7 @@ class FeatureFinderIonMobility:
 
         with open(dir + '/feature-bins.csv', 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow('RT,m/z,im')
+            writer.writerow(['RT,m/z,im'])
             writer.writerows(indexed_bins)
 
         return all_features
