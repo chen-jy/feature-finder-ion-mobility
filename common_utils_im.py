@@ -68,7 +68,7 @@ def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz
 
 
 def different_features_im(feature1: List[float], feature2: List[float]) -> bool:
-    return feature1[2] != feature2[2]
+    return int(feature1[2]) != int(feature2[2])
 
 
 def has_peaks(exp: ms.MSExperiment) -> bool:
