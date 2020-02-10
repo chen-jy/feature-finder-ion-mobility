@@ -7,7 +7,7 @@ print('Loading mzML input file.', end=' ', flush=True)
 ms.MzMLFile().load('mzML/2768-800-860.mzML', exp)
 print('Done', flush=True)
 
-results = []  # List of tuples (number of bins, number of features)
+results = []  # List of lists (number of bins, number of features)
 ff = ffim.FeatureFinderIonMobility()
 
 features = ff.run(exp, 1, 'pphr', 0, 0, 0, 'centroided', 'runs', 'none', False)
@@ -18,7 +18,7 @@ for i in range(5, 76, 5):
 
 with open('runs/bin_counts_pphr.csv', 'w', newline='') as file:
     writer = csv.writer(file)
-    writer.writerow(['num bins, num features'])
+    writer.writerow(['num bins', 'num_features'])
     writer.writerows(results)
 
 results = []
@@ -33,4 +33,3 @@ with open('runs/bin_counts_custom.csv', 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['num bins', 'num features'])
     writer.writerows(results)
-

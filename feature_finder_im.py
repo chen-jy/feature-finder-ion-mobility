@@ -506,7 +506,7 @@ class FeatureFinderIonMobility:
         filter_s = ms.SavitzkyGolayFilter()
         params_s = filter_s.getDefaults()
         params_s.setValue(b'frame_length', 7)
-        params_s.setValue(b'polynomial_order', 4)
+        params_s.setValue(b'polynomial_order', 3)
         filter_s.setParameters(params_s)
 
         pick_hr = ms.PeakPickerHiRes()
