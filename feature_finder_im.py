@@ -36,15 +36,13 @@ class FeatureFinderIonMobility:
         self.num_bins, self.bin_size = 0, 0
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
-        #self.im_scan_nums = [[], []]  # Keep the start and end IM scan numbers for each bin
+        self.im_scan_nums = [[], []]  # Keep the midpoint IM value for each bin
 
-    def setup_bins(self, spectra: List[ms.MSSpectrum]) -> Tuple[float, float]:
+    def setup_bins(self, spectra: List[ms.MSSpectrum]) -> None:
         """Sets up the IM bins for feature finding.
 
         Keyword arguments:
         spectra: the list of spectra to bin
-
-        Returns: the minimum and maximum ion mobility values.
         """
         print('Getting IM bounds.', end=' ', flush=True)
         self.im_start, self.im_end = util.get_im_extrema(spectra)
@@ -57,14 +55,19 @@ class FeatureFinderIonMobility:
             for j in range(2):
                 self.bins[j].append([])
                 self.exps[j].append(ms.MSExperiment())
+            bin_start, bin_stop = i * self.bin_size + self.im_start, (i + 1) * self.bin_size + self.im_start
+            self.im_scan_nums[0].append((bin_start + bin_stop) / 2.0)
+
+        self.im_scan_nums[1].append((self.im_start + self.im_offset) / 2.0)
+        for i in range(1, self.num_bins):
+            bin_start, bin_stop = i * self.bin_size + self.im_offset, (i + 1) * self.bin_size + self.im_offset
+            self.im_scan_nums[1].append((bin_start + bin_stop) / 2.0)
         self.bins[1].append([])  # The last half-bin in the second pass
         self.exps[1].append(ms.MSExperiment())
 
         print('Done', flush=True)
         print('\tSmallest IM:', self.im_start)
         print('\tLargest IM:', self.im_end, end='\n\n')
-
-        return self.im_start, self.im_end
 
     def within_epsilon(self, target: float, var: float) -> bool:
         """Checks if var is within the m/z epsilon of target."""
@@ -253,22 +256,23 @@ class FeatureFinderIonMobility:
         return matched
 
     def match_features(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> \
-            Tuple[ms.FeatureMap, List[Tuple[ms.Feature, int]]]:
+            Tuple[ms.FeatureMap, List[Tuple[ms.Feature, float]]]:
         """Matches found features across passes to reduce the amount of redundant features.
 
         Keyword arguments:
         features1: the list of feature maps (one per bin) for the first pass
         features2: the list of feature maps (one per bin) for the second pass
 
-        Returns: the matched feature map, as well as a list of features and their bin indices for
-        which their intensities were highest.
+        Returns: the matched feature map, as well as a list of features and their IM values
+            (corresponding to the midpoint IM value of the bin that each feature is located in; we
+            can't use the exact IM value because they are discarded by FeatureFinderCentroided).
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
 
         used = [False] * len(pass2)
         matched = ms.FeatureMap()
-        feature_bins = []  # Corresponds to matched; holds (feature, bin index)
+        feature_bins = []  # Corresponds to matched; holds (feature, IM)
 
         for (feature1, bin1) in pass1:
             similar = []
@@ -281,12 +285,12 @@ class FeatureFinderIonMobility:
                     used[j] = True
 
             max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
-            max_feature = (feature1, bin1)
+            max_feature = (feature1, self.im_scan_nums[0][bin1])
             for (feature2, bin2) in similar:
                 area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                 if area > max_area:
                     max_area = area
-                    max_feature = (feature2, bin2)
+                    max_feature = (feature2, self.im_scan_nums[1][bin2])
 
             matched.push_back(max_feature[0])
             feature_bins.append(max_feature)
@@ -294,14 +298,12 @@ class FeatureFinderIonMobility:
         for j in range(len(pass2)):  # Features unique to the second pass
             if not used[j]:
                 matched.push_back(pass2[j][0])
-                if pass2[j][1] >= self.num_bins:
-                    pass2[j] = (pass2[j][0], self.num_bins - 1)
-                feature_bins.append(pass2[j])
+                feature_bins.append((pass2[j][0], self.im_scan_nums[1][pass2[j][1]]))
 
         cleaned, clean_bins = ms.FeatureMap(), []
         used = [False] * len(feature_bins)
 
-        for i in range(len(feature_bins)):
+        for i in range(len(feature_bins)):  # Clean up potential duplicates
             if used[i]:
                 continue
             used[i] = True
@@ -326,112 +328,6 @@ class FeatureFinderIonMobility:
             clean_bins.append(max_feature)
 
         return cleaned, clean_bins
-
-    def match_features_old(self, features1: List[ms.FeatureMap], features2: List[ms.FeatureMap]) -> ms.FeatureMap:
-        """Matches features from adjacent bins across two passes.
-
-        The feature in each feature set with the largest convex hull becomes the 'representative'
-        feature of that set.
-
-        Keyword arguments:
-        features1: the features of the first pass
-        features2: the features of the second pass
-
-        Returns: a matched set of features.
-        """
-        if len(features1) == 1:
-            return features1[0]
-    
-        matched = ms.FeatureMap()
-
-        for i in range(len(features1)):  # Match the first pass against the second
-            for feature1 in features1[i]:
-                similar = []
-                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
-                max_feature = feature1
-
-                for feature2 in features2[i]:  # The half-overlapping bin to the left
-                    if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                        similar.append(feature2)
-                for feature2 in similar:
-                    area = util.polygon_area(feature2.getConvexHull().getHullPoints())
-                    if area > max_area:
-                        max_area = area
-                        max_feature = feature2
-
-                if max_feature not in matched:
-                    matched.push_back(max_feature)
-                if len(similar) > 0:
-                    continue
-
-                similar = []
-                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
-                max_feature = feature1
-
-                for feature2 in features2[i + 1]:  # The half-overlapping bin to the right
-                    if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                        similar.append(feature2)
-                for feature2 in similar:
-                    area = util.polygon_area(feature2.getConvexHull().getHullPoints())
-                    if area > max_area:
-                        max_area = area
-                        max_feature = feature2
-
-                # If len(similar) == 0, then max_feature has already been added
-                if len(similar) > 0 and max_feature not in matched:
-                    matched.push_back(max_feature)
-
-        for i in range(len(features2)):  # Match the second pass against the first
-            for feature1 in features2[i]:
-                similar = []
-                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
-                max_feature = feature1
-
-                if i > 0:
-                    for feature2 in features1[i - 1]:
-                        if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                            similar.append(feature2)
-                    for feature2 in similar:
-                        area = util.polygon_area(feature2.getConvexHull().getHullPoints())
-                        if area > max_area:
-                            max_area = area
-                            max_feature = feature2
-
-                    is_new = True  # Avoid duplicate features from the first matching pass
-                    for feature3 in matched:
-                        if util.similar_features(max_feature, feature3, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                            is_new = False
-                            break
-
-                    if is_new:
-                        matched.push_back(max_feature)
-                    if len(similar) > 0:
-                        continue
-
-                similar = []
-                max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
-                max_feature = feature1
-
-                if i < len(features1):
-                    for feature2 in features1[i]:
-                        if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                            similar.append(feature2)
-                    for feature2 in similar:
-                        area = util.polygon_area(feature2.getConvexHull().getHullPoints())
-                        if area > max_area:
-                            max_area = area
-                            max_feature = feature2
-
-                    is_new = True
-                    for feature3 in matched:
-                        if util.similar_features(max_feature, feature3, self.RT_THRESHOLD, self.MZ_THRESHOLD):
-                            is_new = False
-                            break
-
-                    if len(similar) > 0 and is_new:
-                        matched.push_back(max_feature)
-
-        return matched
 
     def run_ff(self, exp: ms.MSExperiment, type: str) -> ms.FeatureMap:
         """Runs an existing OpenMS feature finder on an experiment.
@@ -590,9 +486,7 @@ class FeatureFinderIonMobility:
         self.num_bins = num_bins
 
         spectra = exp.getSpectra()
-        start, stop = self.setup_bins(spectra)
-        with open(dir + '/im-meta.txt', 'w') as file:
-            file.write(f'{start}\n{stop}\n')
+        self.setup_bins(spectra)
 
         print('Starting binning.', flush=True)
         for spec in spectra:
@@ -623,7 +517,7 @@ class FeatureFinderIonMobility:
 
         with open(dir + '/feature-bins.csv', 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(['RT,m/z,im'])
+            writer.writerow(['RT', 'm/z', 'im'])
             writer.writerows(indexed_bins)
 
         return all_features
