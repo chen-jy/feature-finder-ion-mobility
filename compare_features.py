@@ -3,7 +3,6 @@
 
 import argparse
 import csv
-from functools import singledispatch
 from math import floor
 from operator import itemgetter
 from typing import Any, List
@@ -14,6 +13,7 @@ import common_utils_im as util
 
 
 output_group = ''
+multiple = None
 num_common = 0
 times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
 im_threshold = 0.0
@@ -83,95 +83,6 @@ def convert_to_bidx(im: float) -> int:
     return idx if idx < num_bins else num_bins - 1
 
 
-# A stupidly contrived way of achieving function overloading
-@singledispatch
-def cmp1(features2: ms.FeatureMap, features1: ms.FeatureMap) -> None:
-    raise NotImplementedError
-
-
-@cmp1.register
-def _(features2: list, features1: ms.FeatureMap) -> None:
-    global output_group, num_common, times_matched
-    reset_stats()
-    reset_csv_list(features2)
-
-    common_features, missing_features = ms.FeatureMap(), ms.FeatureMap()
-
-    for j in range(len(features2)):
-        similar = []
-
-        for feature in features1:
-            if util.similar_features(feature, features2[j]):
-                similar.append(feature)
-
-        if len(similar) == 0: times_matched[0] += 1
-        elif len(similar) == 1: times_matched[1] += 1
-        else: times_matched[2] += 1
-
-        if len(similar) > 0:
-            max_area = util.polygon_area(similar[0].getConvexHull().getHullPoints())
-            max_feature = similar[0]
-
-            for f in similar:
-                area = util.polygon_area(f.getConvexHull().getHullPoints())
-                if area > max_area:
-                    max_area = area
-                    max_feature = f
-
-            common_features.push_back(max_feature)
-            num_common += 1
-        else:
-            f = ms.Feature()
-            f.setRT(features2[j][0])
-            f.setMZ(features2[j][1])
-            f.setIntensity(features2[j][2])
-            missing_features.push_back(f)
-
-    common_features.setUniqueIds()
-    ms.FeatureXMLFile().store(output_group + '-common.featureXML', common_features)
-    missing_features.setUniqueIds()
-    ms.FeatureXMLFile().store(output_group + '-missing.featureXML', missing_features)
-
-    print_summary()
-
-
-@singledispatch
-def cmp2(features2: ms.FeatureMap, features1: list) -> None:
-    raise NotImplementedError
-
-
-@cmp2.register
-def _(features2: list, features1: list) -> None:
-    global output_group, num_common, times_matched
-    reset_stats()
-    reset_csv_list(features2)
-
-    for j in range(len(features2)):
-        similar = [features2[j]]
-
-        for i in range(len(features1)):
-            if util.similar_features_im(features1[i], features2[j], 5.0, 0.01, im_threshold):
-                if not features1[i][3]:
-                    features1[i][3] = True
-                    num_common += 1
-                similar.append(features1[i])
-
-        if len(similar) == 1:
-            times_matched[0] += 1
-        elif len(similar) == 2:
-            times_matched[1] += 1
-        else:
-            times_matched[2] += 1
-
-    with open(output_group + '.csv', 'w') as f:
-        f.write('RT,m/z,Intensity\n')
-        for j in range(len(features2)):
-            f.write(str.format('{0},{1},{2},{3}\n', features2[j][0], features2[j][1], features2[j][2],
-                                'FOUND' if features2[j][3] else ''))
-
-    print_summary()
-
-
 def compare(features1: list, features2: list) -> None:
     global output_group, num_common, times_matched, im_threshold
     reset_stats()
@@ -193,21 +104,16 @@ def compare(features1: list, features2: list) -> None:
             num_common += 1
             times_matched[2] += 1
 
+            multiple.write('{:.6f}, {:.6f}, {:.6f}\n'.format(*features2[j]))
+            for feature in similar:
+                multiple.write('{:.6f}, {:.6f}, {:.6f}\n'.format(*feature))
+            multiple.write('==================================================\n')
+
     print_summary()
 
 
-@singledispatch
-def compare_features(features1: ms.FeatureMap, features2: Any) -> None:
-    cmp1(features2, features1)
-
-
-@compare_features.register
-def _(features1: list, features2: Any) -> None:
-    cmp2(features2, features1)
-
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Feature comparison tool.')  # Currently in IM REQUIRED mode
+    parser = argparse.ArgumentParser(description='Feature comparison tool.')
     parser.add_argument('-i', '--in', action='store', required=True, type=str, dest='in_',
                         help='the input features (e.g. found by feature_finder_im)')
     parser.add_argument('-r', '--ref', action='store', required=True, type=str,
@@ -220,11 +126,13 @@ if __name__ == '__main__':
     output_group = args.out
     im_threshold = args.threshold
 
-    print('WARNING: this tool currently only supports im-im comparisons for list-list\n')
-
     input_mask, ref_mask = ms.FeatureMap(), ms.FeatureMap()
     input_is_csv = True if args.in_.endswith('.csv') else False
     ref_is_csv = True if args.ref.endswith('.csv') else False
+
+    if not input_is_csv or not ref_is_csv:
+        print('Error! compare_features is currently in csv-csv only mode')
+        quit()
 
     if input_is_csv: input_mask = csv_to_list(args.in_)
     else: ms.FeatureXMLFile().load(args.in_, input_mask)
@@ -232,5 +140,9 @@ if __name__ == '__main__':
     if ref_is_csv: ref_mask = csv_to_list(args.ref)
     else: ms.FeatureXMLFile().load(args.ref, ref_mask)
 
+    multiple = open(output_group + '-multiple.txt', 'w')
+
     compare(input_mask, ref_mask)
-    #compare_features(ref_mask, input_mask)
+    #compare(ref_mask, input_mask)
+
+    multiple.close()
