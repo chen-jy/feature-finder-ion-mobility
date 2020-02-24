@@ -62,7 +62,7 @@ def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz
         return (abs(feature1.getRT() - feature2[0]) < rt_threshold and
                 abs(feature1.getMZ() - feature2[1]) < mz_threshold)
     elif isinstance(feature1, list) and isinstance(feature2, ms.Feature):
-        return similar_features(feature2, feature1)
+        return similar_features(feature2, feature1, rt_threshold, mz_threshold)
     else:
         return False
 
