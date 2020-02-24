@@ -7,6 +7,8 @@ import argparse
 import csv
 from operator import itemgetter
 import os
+import psutil
+import time
 from typing import List, Optional, Tuple
 
 import pyopenms as ms
@@ -482,13 +484,26 @@ class FeatureFinderIonMobility:
 
         Returns: the features found by the feature finder.
         """
+        time_out = open('timing.log', 'w')
+        pymem = psutil.Process(os.getpid())
+        mem_use = pymem.memory_info()[0] / 2.0 ** 30
+        time_out.write(f'mzml load: {mem_use} GiB\n')
+        start_tt = time.time()
+
         self.reset()
         self.num_bins = num_bins
 
+        start_t = time.time()
         spectra = exp.getSpectra()
         self.setup_bins(spectra)
 
+        total_t = time.time() - start_t
+        time_out.write(f'setup bins: {total_t}s\n')
+        mem_use = pymem.memory_info()[0] / 2.0 ** 30
+        time_out.write(f'setup bins: {mem_use} GiB\n')
+
         print('Starting binning.', flush=True)
+        start_t = time.time()
         for spec in spectra:
             if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
                 continue
@@ -496,19 +511,36 @@ class FeatureFinderIonMobility:
             self.bin_spectrum(spec)
         print('Done')
 
+        total_t = time.time() - start_t
+        time_out.write(f'binning: {total_t}s\n')
+        mem_use = pymem.memory_info()[0] / 2.0 ** 30
+        time_out.write(f'binning: {mem_use} GiB\n')
+
         print('Starting feature finding.', end=' ', flush=True)
+        start_t = time.time()
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
                                                   debug)
         print('Done')
+
+        total_t = time.time() - start_t
+        time_out.write(f'feature finding: {total_t}s\n')
+        mem_use = pymem.memory_info()[0] / 2.0 ** 30
+        time_out.write(f'feature finding: {mem_use} GiB\n')
 
         if self.num_bins == 1:  # Matching between passes for one bin results in no features
             features1[0].setUniqueIds()
             return features1[0]
 
         print('Starting feature matching.', end=' ', flush=True)
+        start_t = time.time()
         all_features, feature_bins = self.match_features(features1, features2)
         all_features.setUniqueIds()
         print('Done')
+
+        total_t = time.time() - start_t
+        time_out.write(f'feature matching: {total_t}s\n')
+        mem_use = pymem.memory_info()[0] / 2.0 ** 30
+        time_out.write(f'feature matching: {mem_use} GiB\n')
 
         indexed_bins = []
         for feature, bin in feature_bins:
@@ -519,6 +551,10 @@ class FeatureFinderIonMobility:
             writer = csv.writer(file)
             writer.writerow(['RT', 'm/z', 'im'])
             writer.writerows(indexed_bins)
+            
+        total_t = time.time() - start_tt
+        time_out.write(f'total: {total_t}s\n')
+        time_out.close()
 
         return all_features
 

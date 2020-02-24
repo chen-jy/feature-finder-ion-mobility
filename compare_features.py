@@ -66,6 +66,7 @@ def print_summary() -> None:
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
 
+    # for ($i=0.005; $i -le 0.3; $i+=0.005) { python37 ...; } <- A Windows for loop
     with open(output_group + '-im_graph.csv', 'a') as f:
         f.write(f'{im_threshold},{num_common},{times_matched[0]},{times_matched[1]},{times_matched[2]}\n')
 
