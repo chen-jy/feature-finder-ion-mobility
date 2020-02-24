@@ -172,6 +172,30 @@ def _(features2: list, features1: list) -> None:
     print_summary()
 
 
+def compare(features1: list, features2: list) -> None:
+    global output_group, num_common, times_matched, im_threshold
+    reset_stats()
+    reset_csv_list(features2)
+
+    for j in range(len(features2)):
+        similar = []
+
+        for i in range(len(features1)):
+            if util.similar_features_im(features1[i], features2[j], 5.0, 0.01, im_threshold):
+                similar.append(features1[i])
+
+        if len(similar) == 0:
+            times_matched[0] += 1
+        elif len(similar) == 1:
+            num_common += 1
+            times_matched[1] += 1
+        else:
+            num_common += 1
+            times_matched[2] += 1
+
+    print_summary()
+
+
 @singledispatch
 def compare_features(features1: ms.FeatureMap, features2: Any) -> None:
     cmp1(features2, features1)
@@ -208,5 +232,5 @@ if __name__ == '__main__':
     if ref_is_csv: ref_mask = csv_to_list(args.ref)
     else: ms.FeatureXMLFile().load(args.ref, ref_mask)
 
-    compare_features(input_mask, ref_mask)
+    compare(input_mask, ref_mask)
     #compare_features(ref_mask, input_mask)
