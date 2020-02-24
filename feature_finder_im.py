@@ -21,6 +21,9 @@ class FeatureFinderIonMobility:
     """The LC-IMS-MS/MS feature finder.
 
     There are no public attributes, and the only public method is run().
+
+    TODO: don't load everything into memory at once; maybe cache to disk
+    TODO: make a separate parameter class so that run() doesn't require so many arguments.
     """
 
     MZ_EPSILON = 0.001  # For binning
@@ -86,7 +89,7 @@ class FeatureFinderIonMobility:
         points = util.get_spectrum_points(spec)
         points = sorted(points, key=itemgetter(3))  # Ascending IM
 
-        temp_bins = [[], [[]]]  # New bins to prevent aliasing
+        temp_bins = [[], [[]]]  # New bins for each pass to prevent aliasing
         new_bins = [[], [[]]]
         for i in range(self.num_bins):
             for j in range(2):
@@ -179,9 +182,12 @@ class FeatureFinderIonMobility:
             max_feature = feature1
 
             for j in range(features.size()):
+                if i == j:
+                    continue
                 feature2 = features[j]
                 if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                     similar.append(feature2)
+
             for feature2 in similar:
                 area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                 if area > max_area:
@@ -204,11 +210,12 @@ class FeatureFinderIonMobility:
         """
         used = []
         for bin_idx in range(len(features)):
-            features[bin_idx].sortByPosition()
+            features[bin_idx].sortByPosition()  # Ascending m/z
             used.append([False] * features[bin_idx].size())
 
         matched = []  # All features
         not_unique = []  # Features found in at least two contiguous bins
+
         for bin_idx in range(len(features)):
             for i in range(features[bin_idx].size()):
                 if used[bin_idx][i]:
@@ -225,7 +232,7 @@ class FeatureFinderIonMobility:
                             continue
 
                         feature2 = features[next_idx][j]
-                        if util.similar_features(feature1, feature2):
+                        if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             similar.append((feature2, j))
                             used[next_idx][j] = True
 
@@ -238,13 +245,14 @@ class FeatureFinderIonMobility:
                         area = util.polygon_area(similar[j][0].getConvexHull().getHullPoints())
                         if area > max_area:
                             max_area = area
-                            max_feature = similar[j]
+                            max_feature = similar[j]  # (feature, index)
 
                     feature_indices.append((next_idx, max_feature[1]))
                     next_idx += 1
 
                 max_intensity, max_feature, max_idx = feature1.getIntensity(), feature1, bin_idx
-                for b_idx, f_idx in feature_indices:
+                for j in range(len(feature_indices)):
+                    b_idx, f_idx = feature_indices[j]
                     intensity = features[b_idx][f_idx].getIntensity()
                     if intensity > max_intensity:
                         max_intensity = intensity
@@ -267,14 +275,13 @@ class FeatureFinderIonMobility:
 
         Returns: the matched feature map, as well as a list of features and their IM values
             (corresponding to the midpoint IM value of the bin that each feature is located in; we
-            can't use the exact IM value because they are discarded by FeatureFinderCentroided).
+            can't use the exact IM value because they are not computed by FeatureFinderCentroided).
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
 
         used = [False] * len(pass2)
-        matched = ms.FeatureMap()
-        feature_bins = []  # Corresponds to matched; holds (feature, IM)
+        feature_bins = []  # Holds (feature, IM)
 
         for (feature1, bin1) in pass1:
             similar = []
@@ -282,30 +289,32 @@ class FeatureFinderIonMobility:
                 if used[j]:
                     continue
                 feature2, bin2 = pass2[j][0], pass2[j][1]
-                if util.similar_features(feature1, feature2) and (bin1 == bin2 or bin1 + 1 == bin2):
-                    similar.append((feature2, bin2))
+                if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD) and \
+                    (bin1 == bin2 or bin1 + 1 == bin2):
+                    similar.append((feature2, bin2, j))
                     used[j] = True
 
             max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
             max_feature = (feature1, self.im_scan_nums[0][bin1])
-            for (feature2, bin2) in similar:
+            max_idx = -1
+
+            for (feature2, bin2, j) in similar:
                 area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                 if area > max_area:
                     max_area = area
                     max_feature = (feature2, self.im_scan_nums[1][bin2])
+                    max_idx = j
 
-            matched.push_back(max_feature[0])
             feature_bins.append(max_feature)
 
         for j in range(len(pass2)):  # Features unique to the second pass
             if not used[j]:
-                matched.push_back(pass2[j][0])
                 feature_bins.append((pass2[j][0], self.im_scan_nums[1][pass2[j][1]]))
 
-        cleaned, clean_bins = ms.FeatureMap(), []
+        cleaned, clean_bins = ms.FeatureMap(), []  # Clean up potential duplicates
         used = [False] * len(feature_bins)
 
-        for i in range(len(feature_bins)):  # Clean up potential duplicates
+        for i in range(len(feature_bins)):
             if used[i]:
                 continue
             used[i] = True
@@ -314,8 +323,8 @@ class FeatureFinderIonMobility:
             for j in range(len(feature_bins)):
                 if used[j]:
                     continue
-                if (util.similar_features(feature_bins[i][0], feature_bins[j][0]) and
-                    feature_bins[i][1] == feature_bins[j][1]):
+                if util.similar_features(feature_bins[i][0], feature_bins[j][0], self.RT_THRESHOLD,
+                                          self.MZ_THRESHOLD) and feature_bins[i][1] == feature_bins[j][1]:
                     similar.append(feature_bins[j])
                     used[j] = True
 
@@ -395,17 +404,19 @@ class FeatureFinderIonMobility:
         features = [[], []]
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
 
-        filter_g = ms.GaussFilter()
-        params_g = filter_g.getDefaults()
-        params_g.setValue(b'ppm_tolerance', 20.0)
-        params_g.setValue(b'use_ppm_tolerance', b'true')
-        filter_g.setParameters(params_g)
+        if filter == 'gauss':
+            filter_g = ms.GaussFilter()
+            params_g = filter_g.getDefaults()
+            params_g.setValue(b'ppm_tolerance', 20.0)
+            params_g.setValue(b'use_ppm_tolerance', b'true')
+            filter_g.setParameters(params_g)
         
-        filter_s = ms.SavitzkyGolayFilter()
-        params_s = filter_s.getDefaults()
-        params_s.setValue(b'frame_length', 7)
-        params_s.setValue(b'polynomial_order', 3)
-        filter_s.setParameters(params_s)
+        if filter == 'sgolay':
+            filter_s = ms.SavitzkyGolayFilter()
+            params_s = filter_s.getDefaults()
+            params_s.setValue(b'frame_length', 7)
+            params_s.setValue(b'polynomial_order', 3)
+            filter_s.setParameters(params_s)
 
         pick_hr = ms.PeakPickerHiRes()
         pick_im = ppim.PeakPickerIonMobility()  # Maybe use a parameter class?
@@ -446,8 +457,7 @@ class FeatureFinderIonMobility:
                     if ff_type == 'centroided':
                         temp_features = self.run_ff(new_exp, ff_type)
                     elif ff_type == 'multiplex':
-                        self.run_ffm(new_exp)
-                        temp_features = new_exp
+                        temp_features = self.run_ffm(new_exp)
 
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
@@ -465,7 +475,7 @@ class FeatureFinderIonMobility:
 
         return features[0], features[1]
 
-    def run(self, exp: ms.MSExperiment(), num_bins: int, pp_type: str = 'none', peak_radius: int = 1,
+    def run(self, exp: ms.MSExperiment(), num_bins: int = 50, pp_type: str = 'pphr', peak_radius: int = 1,
             window_radius: float = 0.015, pp_mode: str = 'int', ff_type: str = 'centroided', dir: str = '.',
             filter: str = 'none', debug: bool = False) -> ms.FeatureMap:
         """Runs the feature finder on an experiment.
@@ -484,7 +494,7 @@ class FeatureFinderIonMobility:
 
         Returns: the features found by the feature finder.
         """
-        time_out = open('timing.log', 'w')
+        time_out = open(dir + '/timing.log', 'a')
         pymem = psutil.Process(os.getpid())
         mem_use = pymem.memory_info()[0] / 2.0 ** 30
         time_out.write(f'mzml load: {mem_use} GiB\n')
@@ -542,11 +552,7 @@ class FeatureFinderIonMobility:
         mem_use = pymem.memory_info()[0] / 2.0 ** 30
         time_out.write(f'feature matching: {mem_use} GiB\n')
 
-        indexed_bins = []
-        for feature, bin in feature_bins:
-            row = [feature.getRT(), feature.getMZ(), bin]
-            indexed_bins.append(row)
-
+        indexed_bins = [[f.getRT(), f.getMZ(), bin] for f, bin in feature_bins]
         with open(dir + '/feature-bins.csv', 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['RT', 'm/z', 'im'])
@@ -568,10 +574,10 @@ if __name__ == "__main__":
                         help='the output featureXML file')
     parser.add_argument('-d', '--dir', action='store', required=False, type=str, default='.',
                         help='the output directory')
-    parser.add_argument('-n', '--num_bins', action='store', required=True, type=int,
+    parser.add_argument('-n', '--num_bins', action='store', required=False, type=int, default=50,
                         help='the number of IM bins to use')
 
-    parser.add_argument('-p', '--pp_type', action='store', required=False, type=str, default='none',
+    parser.add_argument('-p', '--pp_type', action='store', required=False, type=str, default='pphr',
                         choices=['none', 'pphr', 'custom'], help='the peak picker to use')
     parser.add_argument('-r', '--peak_radius', action='store', required=False, type=int, default=1,
                         help='the peak radius for the custom peak picker')
@@ -599,14 +605,20 @@ if __name__ == "__main__":
     if not args.out.endswith('.featureXML'):
         print('Error:', args.out, 'must be a featureXML file')
         exit(1)
+
+    time_out = open(args.dir + '/timing.log', 'w')
+    start_t = time.time()
     
     exp = ms.MSExperiment()
     print('Loading mzML input file.', end=' ', flush=True)
     ms.MzMLFile().load(args.in_, exp)
     print('Done', flush=True)
 
+    total_t = time.time() - start_t
+    time_out.write(f'mzml load: {total_t}s\n')
+    time_out.close()
+
     ff = FeatureFinderIonMobility()
-    # TODO: maybe make a parameter class so that run_ff doesn't need so many arguments
     features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
                       args.ff_type, args.dir, args.filter, args.debug)
 
