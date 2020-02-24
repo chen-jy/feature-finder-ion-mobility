@@ -15,7 +15,7 @@ import common_utils_im as util
 output_group = ''
 multiple = None
 num_common = 0
-times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
+times_matched = [0, 0, 0, 0]  # Zero matches, one match, multiple matches
 im_threshold = 0.0
 
 
@@ -23,7 +23,7 @@ def reset_stats() -> None:
     """Resets the global variables."""
     global num_common, times_matched
     num_common = 0
-    times_matched = [0, 0, 0]
+    times_matched = [0, 0, 0, 0]
 
 
 def csv_to_list(input_filename: str) -> List[List[float]]:
@@ -65,10 +65,12 @@ def print_summary() -> None:
         f.write('One match: %d\n' % times_matched[1])
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
+        print('Missed:', times_matched[3])
+        f.write('Missed: %d\n' % times_matched[3])
 
     # for ($i=0.005; $i -le 0.3; $i+=0.005) { python37 ...; } <- A Windows for loop
-    with open(output_group + '-im_graph.csv', 'a') as f:
-        f.write(f'{im_threshold},{num_common},{times_matched[0]},{times_matched[1]},{times_matched[2]}\n')
+    #with open(output_group + '-im_graph.csv', 'a') as f:
+        #f.write(f'{im_threshold},{num_common},{times_matched[0]},{times_matched[1]},{times_matched[2]}\n')
 
 
 def convert_to_bidx(im: float) -> int:
@@ -87,16 +89,22 @@ def compare(features1: list, features2: list) -> None:
     global output_group, num_common, times_matched, im_threshold
     reset_stats()
     reset_csv_list(features2)
+    features2 = sorted(features2, key=itemgetter(2))
 
     for j in range(len(features2)):
         similar = []
 
+        attempted = False
         for i in range(len(features1)):
             if util.similar_features_im(features1[i], features2[j], 5.0, 0.01, im_threshold):
                 similar.append(features1[i])
+            elif util.similar_features(features1[i], features2[j]):
+                attempted = True
 
         if len(similar) == 0:
             times_matched[0] += 1
+            if attempted:
+                times_matched[3] += 1
         elif len(similar) == 1:
             num_common += 1
             times_matched[1] += 1
