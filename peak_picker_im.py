@@ -148,7 +148,7 @@ class PeakPickerIonMobility:
         for spec in spectra:
             if spec.getMSLevel() != 1:
                 continue
-            picked_exp.addSpectrum(self.pick_spectra(spec))
+            picked_exp.addSpectrum(self.pick_spectra(spec, peak_radius, window_radius, pp_mode, min_int_mult, strict))
 
         return picked_exp
 
@@ -179,6 +179,8 @@ if __name__ == '__main__':
     ms.MzMLFile().load(args.in_, exp)
 
     pp = PeakPickerIonMobility()
+    print('Running peak picker', flush=True)
     picked_exp = pp.run()
 
+    print('Writing mzML output file', flush=True)
     ms.MzMLFile().store(args.output, picked_exp)
