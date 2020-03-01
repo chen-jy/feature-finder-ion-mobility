@@ -20,18 +20,18 @@ def get_spectrum_points(spec: ms.MSSpectrum) -> List[List[float]]:
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
 
 
-def get_im_extrema(spectra: List[ms.MSSpectrum]) -> Tuple[float, float]:
+def get_im_extrema(exp: ms.OnDiscMSExperiment) -> Tuple[float, float]:
     """Finds the smallest and largest IM values in a list of spectra.
 
     Keyword arguments:
-    spectra: the list of spectra with IM data to scan through
+    exp: the experiment containing spectra with IM data to scan through
 
     Returns: a tuple of the smallest and largest IM values, in that order.
     """
     smallest_im, largest_im = float('inf'), float('-inf')
 
-    for spec in spectra:
-        points = get_spectrum_points(spec)
+    for i in range(exp.getNrSpectra()):
+        points = get_spectrum_points(exp.getSpectrum(i))
         for point in points:
             if point[3] < smallest_im:
                 smallest_im = point[3]

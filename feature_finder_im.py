@@ -43,14 +43,14 @@ class FeatureFinderIonMobility:
         self.im_delta, self.im_offset = 0, 0
         self.im_scan_nums = [[], []]  # Keep the midpoint IM value for each bin
 
-    def setup_bins(self, spectra: List[ms.MSSpectrum]) -> None:
+    def setup_bins(self, exp: ms.OnDiscMSExperiment) -> None:
         """Sets up the IM bins for feature finding.
 
         Keyword arguments:
-        spectra: the list of spectra to bin
+        exp: the experiment containing spectra to bin
         """
         print('Getting IM bounds.', end=' ', flush=True)
-        self.im_start, self.im_end = util.get_im_extrema(spectra)
+        self.im_start, self.im_end = util.get_im_extrema(exp)
 
         self.im_delta = self.im_end - self.im_start
         self.bin_size = self.im_delta / self.num_bins
@@ -475,7 +475,7 @@ class FeatureFinderIonMobility:
 
         return features[0], features[1]
 
-    def run(self, exp: ms.MSExperiment(), num_bins: int = 50, pp_type: str = 'pphr', peak_radius: int = 1,
+    def run(self, exp: ms.OnDiscMSExperiment, num_bins: int = 50, pp_type: str = 'pphr', peak_radius: int = 1,
             window_radius: float = 0.015, pp_mode: str = 'int', ff_type: str = 'centroided', dir: str = '.',
             filter: str = 'none', debug: bool = False, bench: bool = False) -> ms.FeatureMap:
         """Runs the feature finder on an experiment.
@@ -506,8 +506,7 @@ class FeatureFinderIonMobility:
         self.num_bins = num_bins
 
         if bench: start_t = time.time()
-        spectra = exp.getSpectra()
-        self.setup_bins(spectra)
+        self.setup_bins(exp)
 
         if bench:
             total_t = time.time() - start_t
@@ -517,7 +516,8 @@ class FeatureFinderIonMobility:
 
         print('Starting binning.', flush=True)
         if bench: start_t = time.time()
-        for spec in spectra:
+        for i in range(exp.getNrSpectra()):
+            spec = exp.getSpectrum(i)
             if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
                 continue
             print('Binning RT', spec.getRT(), flush=True)
@@ -619,9 +619,11 @@ if __name__ == "__main__":
         time_out = open(args.dir + '/timing.log', 'w')
         start_t = time.time()
     
-    exp = ms.MSExperiment()
+    exp = ms.OnDiscMSExperiment()
     print('Loading mzML input file.', end=' ', flush=True)
-    ms.MzMLFile().load(args.in_, exp)
+    if not exp.openFile(args.in_):
+        print('Error:', args.in_, 'is not an indexed mzML file')
+        exit(1)
     print('Done', flush=True)
 
     if args.bench:
