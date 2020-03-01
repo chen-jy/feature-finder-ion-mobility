@@ -7,14 +7,14 @@ import pyopenms as ms
 
 
 def get_spectrum_points(spec: ms.MSSpectrum) -> List[List[float]]:
-    """Extracts the retention times, mass to charges, intensities, and ion mobility values of
-    all peaks in a spectrum.
+    """Extracts the retention times, mass to charges, intensities, and ion mobility values of all
+    peaks in a spectrum.
 
     Keyword arguments:
     spec: the spectrum to extract data points from
 
-    Returns: a list of lists, where each interior list holds RT, m/z, intensity, and IM data
-    (in that order) for a single peak in the spectrum.
+    Returns: a list of lists, where each interior list holds RT, m/z, intensity, and IM data (in
+    that order) for a single peak in the spectrum.
     """
     point_data = zip(*spec.get_peaks(), spec.getFloatDataArrays()[0])
     return [[spec.getRT(), mz, intensity, im] for mz, intensity, im in point_data]
@@ -67,12 +67,9 @@ def similar_features(feature1: Any, feature2: Any, rt_threshold: float = 5.0, mz
         return False
 
 
-def different_features_im(feature1: List[float], feature2: List[float]) -> bool:
-    return int(feature1[2]) != int(feature2[2])
-
-
 def similar_features_im(feature1: List[float], feature2: List[float], rt_threshold: float = 5.0,
-                        mz_threshold: float = 0.01, im_threshold: float = 0.01) -> bool:
+                        mz_threshold: float = 0.01, im_threshold: float = 0.031) -> bool:
+    """Checks if the RTs, m/zs, and IMs of two features are within fixed thresholds of each other."""
     return similar_features(feature1, feature2) and abs(feature1[2] - feature2[2]) < im_threshold
 
 

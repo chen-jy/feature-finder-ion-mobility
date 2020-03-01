@@ -14,12 +14,12 @@ class PeakPickerIonMobility:
     The algorithm:
     1. Sort peaks by increasing m/z (or decreasing intensity) and mark all peaks as "not picked".
     2. Walk from left to right and check if the current peak is a local maximum.
-        - Not necessary in intensity mode.
-    3. For each local maximum, walk left (and right) while peak intensities decrease
+        - Not necessary in decreasing intensity mode.
+    3. For each local maximum, walk left (and right) while peak intensities decrease.
         - If the params are satisfied, construct a "peak set" and mark all peaks as "picked".
-    4. Replace the peak set with a single peak with
-        - intensity = sum of the intensities of the peaks in the peak set.
-        - position = intensity-weighted average of the positions in the peak set.
+    4. Replace the peak set with a single peak with:
+        - intensity = the sum of all the intensities of the peaks in the peak set.
+        - position = the intensity-weighted average of all of the positions in the peak set.
 
     There are no attributes and only two (public) methods.
     """
@@ -154,7 +154,7 @@ class PeakPickerIonMobility:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Custom peak picker.')
+    parser = argparse.ArgumentParser(description='Custom LC-IMS-MS/MS peak picker.')
     parser.add_argument('-i', '--in', action='store', required=True, type=str, dest='in_',
                         help='the input mzML file')
     parser.add_argument('-o', '--out', action='store', required=True, type=str,

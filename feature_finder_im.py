@@ -22,7 +22,7 @@ class FeatureFinderIonMobility:
 
     There are no public attributes, and the only public method is run().
 
-    TODO: don't load everything into memory at once; maybe cache to disk
+    TODO: optimize memory usage.
     TODO: make a separate parameter class so that run() doesn't require so many arguments.
     """
 
@@ -275,7 +275,7 @@ class FeatureFinderIonMobility:
 
         Returns: the matched feature map, as well as a list of features and their IM values
             (corresponding to the midpoint IM value of the bin that each feature is located in; we
-            can't use the exact IM value because they are not computed by FeatureFinderCentroided).
+            can't use the exact IM value because they are not computed by the feature finders).
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
@@ -340,15 +340,18 @@ class FeatureFinderIonMobility:
 
         return cleaned, clean_bins
 
-    def run_ff(self, exp: ms.MSExperiment, type: str) -> ms.FeatureMap:
+    def run_ff(self, exp: ms.MSExperiment, type: str = 'centroided') -> ms.FeatureMap:
         """Runs an existing OpenMS feature finder on an experiment.
 
         Keyword arguments:
         exp: the experiment to run the existing feature finder on
-        type: the name of the existing feature finder to run ('centroided')
+        type: the name of the existing feature finder to run
 
         Returns: the features in the experiment.
         """
+        if type == 'multiplex':
+            return self.run_ffm(exp)
+
         ff = ms.FeatureFinder()
         ff.setLogType(ms.LogType.NONE)
         features, seeds = ms.FeatureMap(), ms.FeatureMap()
@@ -393,13 +396,13 @@ class FeatureFinderIonMobility:
         peak_radius: for the custom peak picker, the minimum peak radius of a peak set
         window_radius: for the custom peak picker, the maximum m/z window radius to consider
         pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
-        ff_type: the existing feature finder to use ('centroided')
+        ff_type: the existing feature finder to use ('centroided' or 'multiplex')
         dir: the directory to write the intermediate output files to
-        filter: the noise filter to use
-        debug: determine if intermediate output files should be written
+        filter: the noise filter to use ('none', 'gauss', or 'sgolay')
+        debug: determines if intermediate output files should be written
 
         Returns: a list of two lists (for the passes), each containing the features for all of
-        their bins.
+            their bins.
         """
         features = [[], []]
         total_features = [ms.FeatureMap(), ms.FeatureMap()]
@@ -419,7 +422,7 @@ class FeatureFinderIonMobility:
             filter_s.setParameters(params_s)
 
         pick_hr = ms.PeakPickerHiRes()
-        pick_im = ppim.PeakPickerIonMobility()  # Maybe use a parameter class?
+        pick_im = ppim.PeakPickerIonMobility()
 
         nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]
 
@@ -454,10 +457,7 @@ class FeatureFinderIonMobility:
                 # Feature finding
                 temp_features = ms.FeatureMap()
                 if util.has_peaks(new_exp):
-                    if ff_type == 'centroided':
-                        temp_features = self.run_ff(new_exp, ff_type)
-                    elif ff_type == 'multiplex':
-                        temp_features = self.run_ffm(new_exp)
+                    temp_features = self.run_ff(new_exp, ff_type)
 
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
@@ -477,7 +477,7 @@ class FeatureFinderIonMobility:
 
     def run(self, exp: ms.MSExperiment(), num_bins: int = 50, pp_type: str = 'pphr', peak_radius: int = 1,
             window_radius: float = 0.015, pp_mode: str = 'int', ff_type: str = 'centroided', dir: str = '.',
-            filter: str = 'none', debug: bool = False) -> ms.FeatureMap:
+            filter: str = 'none', debug: bool = False, bench: bool = False) -> ms.FeatureMap:
         """Runs the feature finder on an experiment.
 
         Keyword arguments:
@@ -487,33 +487,36 @@ class FeatureFinderIonMobility:
         peak_radius: for the custom peak picker, the minimum peak radius of a peak set
         window_radius: for the custom peak picker, the maximum m/z window radius to consider
         pp_mode: for the custom peak picker, the mode to use ('ltr' or 'int')
-        ff_type: the existing feature finder to use ('centroided')
+        ff_type: the existing feature finder to use ('centroided' or 'multiplex')
         dir: the directory to write the intermediate output files to
-        filter: the noise filter to use
-        debug: determine if intermediate output files should be written
+        filter: the noise filter to use ('none', 'gauss', or 'sgolay')
+        debug: determines if intermediate output files should be written
+        bench: determines if the program should be benchmarked
 
         Returns: the features found by the feature finder.
         """
-        time_out = open(dir + '/timing.log', 'a')
-        pymem = psutil.Process(os.getpid())
-        mem_use = pymem.memory_info()[0] / 2.0 ** 30
-        time_out.write(f'mzml load: {mem_use} GiB\n')
-        start_tt = time.time()
+        if bench:
+            time_out = open(dir + '/timing.log', 'a')
+            pymem = psutil.Process(os.getpid())
+            mem_use = pymem.memory_info()[0] / 2.0 ** 30
+            time_out.write(f'mzml load: {mem_use} GiB\n')
+            start_tt = time.time()
 
         self.reset()
         self.num_bins = num_bins
 
-        start_t = time.time()
+        if bench: start_t = time.time()
         spectra = exp.getSpectra()
         self.setup_bins(spectra)
 
-        total_t = time.time() - start_t
-        time_out.write(f'setup bins: {total_t}s\n')
-        mem_use = pymem.memory_info()[0] / 2.0 ** 30
-        time_out.write(f'setup bins: {mem_use} GiB\n')
+        if bench:
+            total_t = time.time() - start_t
+            time_out.write(f'setup bins: {total_t}s\n')
+            mem_use = pymem.memory_info()[0] / 2.0 ** 30
+            time_out.write(f'setup bins: {mem_use} GiB\n')
 
         print('Starting binning.', flush=True)
-        start_t = time.time()
+        if bench: start_t = time.time()
         for spec in spectra:
             if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
                 continue
@@ -521,36 +524,39 @@ class FeatureFinderIonMobility:
             self.bin_spectrum(spec)
         print('Done')
 
-        total_t = time.time() - start_t
-        time_out.write(f'binning: {total_t}s\n')
-        mem_use = pymem.memory_info()[0] / 2.0 ** 30
-        time_out.write(f'binning: {mem_use} GiB\n')
+        if bench:
+            total_t = time.time() - start_t
+            time_out.write(f'binning: {total_t}s\n')
+            mem_use = pymem.memory_info()[0] / 2.0 ** 30
+            time_out.write(f'binning: {mem_use} GiB\n')
 
         print('Starting feature finding.', end=' ', flush=True)
-        start_t = time.time()
+        if bench: start_t = time.time()
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
                                                   debug)
         print('Done')
 
-        total_t = time.time() - start_t
-        time_out.write(f'feature finding: {total_t}s\n')
-        mem_use = pymem.memory_info()[0] / 2.0 ** 30
-        time_out.write(f'feature finding: {mem_use} GiB\n')
+        if bench:
+            total_t = time.time() - start_t
+            time_out.write(f'feature finding: {total_t}s\n')
+            mem_use = pymem.memory_info()[0] / 2.0 ** 30
+            time_out.write(f'feature finding: {mem_use} GiB\n')
 
         if self.num_bins == 1:  # Matching between passes for one bin results in no features
             features1[0].setUniqueIds()
             return features1[0]
 
         print('Starting feature matching.', end=' ', flush=True)
-        start_t = time.time()
+        if bench: start_t = time.time()
         all_features, feature_bins = self.match_features(features1, features2)
         all_features.setUniqueIds()
         print('Done')
 
-        total_t = time.time() - start_t
-        time_out.write(f'feature matching: {total_t}s\n')
-        mem_use = pymem.memory_info()[0] / 2.0 ** 30
-        time_out.write(f'feature matching: {mem_use} GiB\n')
+        if bench:
+            total_t = time.time() - start_t
+            time_out.write(f'feature matching: {total_t}s\n')
+            mem_use = pymem.memory_info()[0] / 2.0 ** 30
+            time_out.write(f'feature matching: {mem_use} GiB\n')
 
         indexed_bins = [[f.getRT(), f.getMZ(), bin] for f, bin in feature_bins]
         with open(dir + '/feature-bins.csv', 'w', newline='') as file:
@@ -558,9 +564,10 @@ class FeatureFinderIonMobility:
             writer.writerow(['RT', 'm/z', 'im'])
             writer.writerows(indexed_bins)
             
-        total_t = time.time() - start_tt
-        time_out.write(f'total: {total_t}s\n')
-        time_out.close()
+        if bench:
+            total_t = time.time() - start_tt
+            time_out.write(f'total: {total_t}s\n')
+            time_out.close()
 
         return all_features
 
@@ -593,6 +600,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--debug', action='store_true', required=False, default=False,
                         help='write intermediate mzML and featureXML files')
+    parser.add_argument('--bench', action='store_true', required=False, default=False,
+                        help='benchmark (time and memory usage) the program')
 
     args = parser.parse_args()
 
@@ -606,21 +615,23 @@ if __name__ == "__main__":
         print('Error:', args.out, 'must be a featureXML file')
         exit(1)
 
-    time_out = open(args.dir + '/timing.log', 'w')
-    start_t = time.time()
+    if args.bench:
+        time_out = open(args.dir + '/timing.log', 'w')
+        start_t = time.time()
     
     exp = ms.MSExperiment()
     print('Loading mzML input file.', end=' ', flush=True)
     ms.MzMLFile().load(args.in_, exp)
     print('Done', flush=True)
 
-    total_t = time.time() - start_t
-    time_out.write(f'mzml load: {total_t}s\n')
-    time_out.close()
+    if args.bench:
+        total_t = time.time() - start_t
+        time_out.write(f'mzml load: {total_t}s\n')
+        time_out.close()
 
     ff = FeatureFinderIonMobility()
     features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
-                      args.ff_type, args.dir, args.filter, args.debug)
+                      args.ff_type, args.dir, args.filter, args.debug, args.bench)
 
     ms.FeatureXMLFile().store(args.dir + '/' + args.out, features)
     print('Found', features.size(), 'features')
