@@ -41,7 +41,7 @@ class FeatureFinderIonMobility:
         self.num_bins, self.bin_size = 0, 0
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
-        self.im_scan_nums = [[], []]  # Keep the midpoint IM value for each bin
+        self.im_scan_nums = [[], []]  # Keep the intensity-weighted average IM value for each bin
 
     def setup_bins(self, exp: ms.OnDiscMSExperiment) -> None:
         """Sets up the IM bins for feature finding.
@@ -60,13 +60,7 @@ class FeatureFinderIonMobility:
             for j in range(2):
                 self.bins[j].append([])
                 self.exps[j].append(ms.MSExperiment())
-            bin_start, bin_stop = i * self.bin_size + self.im_start, (i + 1) * self.bin_size + self.im_start
-            self.im_scan_nums[0].append((bin_start + bin_stop) / 2.0)
 
-        self.im_scan_nums[1].append((self.im_start + self.im_offset) / 2.0)
-        for i in range(1, self.num_bins):
-            bin_start, bin_stop = i * self.bin_size + self.im_offset, (i + 1) * self.bin_size + self.im_offset
-            self.im_scan_nums[1].append((bin_start + bin_stop) / 2.0)
         self.bins[1].append([])  # The last half-bin in the second pass
         self.exps[1].append(ms.MSExperiment())
 
@@ -162,6 +156,24 @@ class FeatureFinderIonMobility:
             new_spec.setRT(spec.getRT())
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
             self.exps[1][i].addSpectrum(new_spec)
+
+    def compute_bin_im(self, bin: List[List[float]]) -> float:
+        """Computes the intensity-weighted average IM value for a given bin.
+
+        Keyword arguments:
+        bin: the bin to compute the average IM for
+
+        Returns: the intensity-weighted average IM for the given bin.
+        """
+        total_intensity, average_im = 0, 0
+        for i in range(len(bin)):
+            total_intensity += bin[i][2]
+
+        if total_intensity != 0:
+            for i in range(len(bin)):
+                average_im += bin[i][3] * (bin[i][2] / total_intensity)
+
+        return average_im
 
     def match_features_internal(self, features: ms.FeatureMap) -> ms.FeatureMap:
         """Matches features in a single bin; intended to correct satellite features.
@@ -274,7 +286,7 @@ class FeatureFinderIonMobility:
         features2: the list of feature maps (one per bin) for the second pass
 
         Returns: the matched feature map, as well as a list of features and their IM values
-            (corresponding to the midpoint IM value of the bin that each feature is located in; we
+            (corresponding to the average IM value of the bin that each feature is located in; we
             can't use the exact IM value because they are not computed by the feature finders).
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
@@ -522,6 +534,11 @@ class FeatureFinderIonMobility:
                 continue
             print('Binning RT', spec.getRT(), flush=True)
             self.bin_spectrum(spec)
+
+        for i in range(self.num_bins):
+            self.im_scan_nums[0].append(self.compute_bin_im(self.bins[0][i]))
+            self.im_scan_nums[1].append(self.compute_bin_im(self.bins[1][i]))
+        self.im_scan_nums[1].append(self.compute_bin_im(self.bins[1][self.num_bins]))
         print('Done')
 
         if bench:
