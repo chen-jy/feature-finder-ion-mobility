@@ -22,7 +22,7 @@ class FeatureFinderIonMobility:
 
     There are no public attributes, and the only public method is run().
 
-    TODO: optimize memory usage.
+    TODO: maybe slightly un-optimize memory usage to increase speed.
     TODO: make a separate parameter class so that run() doesn't require so many arguments.
     """
 
@@ -36,8 +36,6 @@ class FeatureFinderIonMobility:
 
     def reset(self) -> None:
         """Resets the feature finder to its default state."""
-        self.bins = [[], []]  # bins[0] is the first pass and bins[1] is the second
-        self.exps = [[], []]  # Same as above
         self.num_bins, self.bin_size = 0, 0
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
@@ -56,52 +54,46 @@ class FeatureFinderIonMobility:
         self.bin_size = self.im_delta / self.num_bins
         self.im_offset = self.im_start + self.bin_size / 2.0
 
-        for i in range(self.num_bins):
-            for j in range(2):
-                self.bins[j].append([])
-                self.exps[j].append(ms.MSExperiment())
-
-        self.bins[1].append([])  # The last half-bin in the second pass
-        self.exps[1].append(ms.MSExperiment())
-
         print('Done', flush=True)
-        print('\tSmallest IM:', self.im_start)
-        print('\tLargest IM:', self.im_end, end='\n\n')
 
     def within_epsilon(self, target: float, var: float) -> bool:
         """Checks if var is within the m/z epsilon of target."""
         return target - self.MZ_EPSILON <= var <= target + self.MZ_EPSILON
 
-    def bin_spectrum(self, spec: ms.MSSpectrum) -> None:
+    def bin_spectrum(self, spec: ms.MSSpectrum, dir: str = '.') -> None:
         """Bins a single spectrum in two passes.
 
-        Results are stored in the private bin lists.
+        Results are written to disk.
 
         Keyword arguments:
         spec: the spectrum to bin
+        dir: the directory to write and read temporary files to
         """
         points = util.get_spectrum_points(spec)
         points = sorted(points, key=itemgetter(3))  # Ascending IM
 
-        temp_bins = [[], [[]]]  # New bins for each pass to prevent aliasing
+        temp_bins = [[], [[]]]
         new_bins = [[], [[]]]
+        new_exps = [[], [ms.MSExperiment()]]
+
         for i in range(self.num_bins):
             for j in range(2):
                 temp_bins[j].append([])
                 new_bins[j].append([])
+                new_exps[j].append(ms.MSExperiment())
 
         for i in range(len(points)):  # Assign points to bins
             bin_idx = int((points[i][3] - self.im_start) / self.bin_size)
             if bin_idx >= self.num_bins:
                 bin_idx = self.num_bins - 1
-            temp_bins[0][bin_idx].append(list(points[i]))  # Cast list to list to prevent aliasing
+            temp_bins[0][bin_idx].append(points[i])
 
             bin_idx = int((points[i][3] - self.im_offset) / self.bin_size) + 1
             if points[i][3] < self.im_offset:
                 bin_idx = 0
             elif bin_idx > self.num_bins:
                 bin_idx = self.num_bins
-            temp_bins[1][bin_idx].append(list(points[i]))
+            temp_bins[1][bin_idx].append(points[i])
 
         for i in range(self.num_bins):  # First pass
             if len(temp_bins[0][i]) == 0:
@@ -115,20 +107,26 @@ class FeatureFinderIonMobility:
                 if self.within_epsilon(curr_mz, temp_bins[0][i][j][1]):
                     running_intensity += temp_bins[0][i][j][2]
                 else:  # Reached a new m/z slice
-                    temp_bins[0][i][mz_start][2] = running_intensity
-                    new_bins[0][i].append(list(temp_bins[0][i][mz_start]))
+                    point = list(temp_bins[0][i][mz_start])
+                    point[2] = running_intensity
+                    new_bins[0][i].append(point)
                     mz_start, curr_mz = j, temp_bins[0][i][j][1]
                     running_intensity = temp_bins[0][i][j][2]
 
-            temp_bins[0][i][mz_start][2] = running_intensity  # Take care of the last slice
-            new_bins[0][i].append(list(temp_bins[0][i][mz_start]))
-            self.bins[0][i].extend(new_bins[0][i])
+            point = list(temp_bins[0][i][mz_start])  # Take care of the last slice
+            point[2] = running_intensity
+            new_bins[0][i].append(point)
 
             transpose = list(zip(*new_bins[0][i]))
             new_spec = ms.MSSpectrum()  # The final binned spectrum
+            im_fda = ms.FloatDataArray()
+            for im in transpose[3]:
+                im_fda.push_back(im)
+
             new_spec.setRT(spec.getRT())
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
-            self.exps[0][i].addSpectrum(new_spec)
+            new_spec.setFloatDataArrays([im_fda])
+            new_exps[0][i].addSpectrum(new_spec)
 
         for i in range(self.num_bins + 1):  # Second pass
             if len(temp_bins[1][i]) == 0:
@@ -142,36 +140,71 @@ class FeatureFinderIonMobility:
                 if self.within_epsilon(curr_mz, temp_bins[1][i][j][1]):
                     running_intensity += temp_bins[1][i][j][2]
                 else:
-                    temp_bins[1][i][mz_start][2] = running_intensity
-                    new_bins[1][i].append(list(temp_bins[1][i][mz_start]))
+                    point = list(temp_bins[1][i][mz_start])
+                    point[2] = running_intensity
+                    new_bins[1][i].append(point)
                     mz_start, curr_mz = j, temp_bins[1][i][j][1]
                     running_intensity = temp_bins[1][i][j][2]
 
-            temp_bins[1][i][mz_start][2] = running_intensity
-            new_bins[1][i].append(list(temp_bins[1][i][mz_start]))
-            self.bins[1][i].extend(new_bins[1][i])
+
+            point = list(temp_bins[1][i][mz_start])
+            point[2] = running_intensity
+            new_bins[1][i].append(point)
 
             transpose = list(zip(*new_bins[1][i]))
             new_spec = ms.MSSpectrum()
+            im_fda = ms.FloatDataArray()
+            for im in transpose[3]:
+                im_fda.push_back(im)
+
             new_spec.setRT(spec.getRT())
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
-            self.exps[1][i].addSpectrum(new_spec)
+            new_spec.setFloatDataArrays([im_fda])
+            new_exps[1][i].addSpectrum(new_spec)
 
-    def compute_bin_im(self, bin: List[List[float]]) -> float:
+        for i in range(self.num_bins):  # Write pass 1 to disk
+            exp = ms.MSExperiment()
+            try:
+                ms.MzMLFile().load(dir + '/b-0-' + str(i) + '.mzML', exp)
+            except:
+                pass
+            util.combine_experiments(exp, new_exps[0][i])
+            ms.MzMLFile().store(dir + '/b-0-' + str(i) + '.mzML', exp)
+
+        for i in range(self.num_bins + 1):  # Write pass 2 to disk
+            exp = ms.MSExperiment()
+            try:
+                ms.MzMLFile().load(dir + '/b-1-' + str(i) + '.mzML', exp)
+            except:
+                pass
+            util.combine_experiments(exp, new_exps[1][i])
+            ms.MzMLFile().store(dir + '/b-1-' + str(i) + '.mzML', exp)
+
+    def compute_bin_im(self, run: int, bin: int, dir: str = '.') -> float:
         """Computes the intensity-weighted average IM value for a given bin.
 
         Keyword arguments:
+        run: the pass that the bin is in (1 or 2)
         bin: the bin to compute the average IM for
+        dir: the directory to write and read temporary files to
 
-        Returns: the intensity-weighted average IM for the given bin.
+        Returns: the intensity-weighted average IM value for a given bin.
         """
+        exp = ms.MSExperiment()
+        ms.MzMLFile().load(dir + '/b-' + str(run) + '-' + str(bin) + '.mzML', exp)
         total_intensity, average_im = 0, 0
-        for i in range(len(bin)):
-            total_intensity += bin[i][2]
+
+        all_points = []
+        for i in range(exp.getNrSpectra()):
+            spec = exp.getSpectrum(i)
+            all_points.extend(util.get_spectrum_points(spec))
+
+        for i in range(len(all_points)):
+            total_intensity += all_points[i][2]
 
         if total_intensity != 0:
-            for i in range(len(bin)):
-                average_im += bin[i][3] * (bin[i][2] / total_intensity)
+            for i in range(len(all_points)):
+                average_im += all_points[i][3] * (all_points[i][2] / total_intensity)
 
         return average_im
 
@@ -440,31 +473,29 @@ class FeatureFinderIonMobility:
 
         for j in range(2):  # Pass index
             for i in range(nb[j]):  # Bin index
-                new_exp = ms.MSExperiment()
-                if debug:
-                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.mzML', self.exps[j][i])
+                exp, new_exp = ms.MSExperiment(), ms.MSExperiment()
+                ms.MzMLFile().load(dir + '/b-' + str(j) + '-' + str(i) + '.mzML', exp)
 
                 # Optional noise filtering
                 if filter == 'gauss':
-                    filter_g.filterExperiment(self.exps[j][i])
+                    filter_g.filterExperiment(exp)
                 elif filter == 'sgolay':
-                    filter_s.filterExperiment(self.exps[j][i])
+                    filter_s.filterExperiment(exp)
 
                 if filter != 'none' and debug:
-                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-filtered.mzML',
-                                        self.exps[j][i])
+                    ms.MzMLFile().store(dir + '/pass' + str(j) + '-bin' + str(i) + '-filtered.mzML', exp)
 
                 # Optional peak picking
                 if pp_type == 'pphr':
-                    pick_hr.pickExperiment(self.exps[j][i], new_exp)
+                    pick_hr.pickExperiment(exp, new_exp)
                 elif pp_type == 'custom':
-                    new_exp = pick_im.pick_experiment(self.exps[j][i], peak_radius, window_radius, pp_mode,
-                                                      self.MIN_INTENSITY, strict=True)
+                    new_exp = pick_im.pick_experiment(exp, peak_radius, window_radius, pp_mode, self.MIN_INTENSITY,
+                                                      strict=True)
                 else:
-                    new_exp = self.exps[j][i]
+                    new_exp = exp
 
                 if pp_type != 'none' and debug:
-                    ms.MzMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '-picked.mzML', new_exp)
+                    ms.MzMLFile().store(dir + '/pass' + str(j) + '-bin' + str(i) + '-picked.mzML', new_exp)
 
                 # Feature finding
                 temp_features = ms.FeatureMap()
@@ -473,9 +504,9 @@ class FeatureFinderIonMobility:
 
                 temp_features = self.match_features_internal(temp_features)
                 temp_features.setUniqueIds()
+
                 if debug:
-                    ms.FeatureXMLFile().store(dir + '/pass' + str(j + 1) + '-bin' + str(i) + '.featureXML',
-                                              temp_features)
+                    ms.FeatureXMLFile().store(dir + '/pass' + str(j) + '-bin' + str(i) + '.featureXML', temp_features)
 
                 features[j].append(temp_features)
                 total_features[j] += temp_features
@@ -483,7 +514,7 @@ class FeatureFinderIonMobility:
         if debug:
             for j in range(2):
                 total_features[j].setUniqueIds()
-                ms.FeatureXMLFile().store(dir + '/pass' + str(j + 1) + '.featureXML', total_features[j])
+                ms.FeatureXMLFile().store(dir + '/pass' + str(j) + '.featureXML', total_features[j])
 
         return features[0], features[1]
 
@@ -508,7 +539,7 @@ class FeatureFinderIonMobility:
         Returns: the features found by the feature finder.
         """
         if bench:
-            time_out = open(dir + '/timing.log', 'a')
+            time_out = open(dir + '/benchmark.txt', 'a')
             pymem = psutil.Process(os.getpid())
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'mzml load: {mem_use} GiB\n')
@@ -526,19 +557,20 @@ class FeatureFinderIonMobility:
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'setup bins: {mem_use} GiB\n')
 
-        print('Starting binning.', flush=True)
-        if bench: start_t = time.time()
-        for i in range(exp.getNrSpectra()):
-            spec = exp.getSpectrum(i)
-            if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
-                continue
-            print('Binning RT', spec.getRT(), flush=True)
-            self.bin_spectrum(spec)
+        #print('Starting binning.', flush=True)
+        #if bench: start_t = time.time()
+        #for i in range(exp.getNrSpectra()):
+        #    spec = exp.getSpectrum(i)
+        #    if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
+        #        continue
+        #    print('Binning RT', spec.getRT(), flush=True)
+        #    self.bin_spectrum(spec, dir)
 
+        print('Getting bin average IM values.', end=' ', flush=True)
         for i in range(self.num_bins):
-            self.im_scan_nums[0].append(self.compute_bin_im(self.bins[0][i]))
-            self.im_scan_nums[1].append(self.compute_bin_im(self.bins[1][i]))
-        self.im_scan_nums[1].append(self.compute_bin_im(self.bins[1][self.num_bins]))
+            self.im_scan_nums[0].append(self.compute_bin_im(0, i, dir))
+            self.im_scan_nums[1].append(self.compute_bin_im(1, i, dir))
+        self.im_scan_nums[1].append(self.compute_bin_im(1, self.num_bins, dir))
         print('Done')
 
         if bench:
@@ -586,6 +618,12 @@ class FeatureFinderIonMobility:
             time_out.write(f'total: {total_t}s\n')
             time_out.close()
 
+        if not debug:  # Clean up the temporary files
+            for j in range(2):
+                for i in range(self.num_bins):
+                    os.remove(dir + '/b-' + str(j) + '-' + str(i) + '.mzML')
+            os.remove(dir + '/b-1-' + str(self.num_bins) + '.mzML')
+
         return all_features
 
 
@@ -628,12 +666,12 @@ if __name__ == "__main__":
     if not os.path.isdir(args.dir):
         print('Error:', args.dir, 'is not an existing directory')
         exit(1)
-    if not args.out.endswith('.featureXML'):
-        print('Error:', args.out, 'must be a featureXML file')
+    if not args.out.endswith('.featureXML') or args.out.endswith('.mzML'):  # TODO: implement mzML support
+        print('Error:', args.out, 'must be a featureXML or mzML file')
         exit(1)
 
     if args.bench:
-        time_out = open(args.dir + '/timing.log', 'w')
+        time_out = open(args.dir + '/benchmark.txt', 'w')
         start_t = time.time()
     
     exp = ms.OnDiscMSExperiment()
