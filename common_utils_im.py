@@ -75,8 +75,15 @@ def similar_features_im(feature1: List[float], feature2: List[float], rt_thresho
 
 def has_peaks(exp: ms.MSExperiment) -> bool:
     """Checks if any spectrum in an experiment has peaks."""
-    spectra = exp.getSpectra()
-    for spec in spectra:
+    for i in range(exp.getNrSpectra()):
+        spec = exp.getSpectrum(i)
         if spec.size() > 0:
             return True
     return False
+
+
+def combine_experiments(exp1: ms.MSExperiment, exp2: ms.MSExperiment) -> None:
+    """Merges two experiments (putting the second into the first)."""
+    for i in range(exp2.getNrSpectra()):
+        spec = exp2.getSpectrum(i)
+        exp1.addSpectrum(spec)
