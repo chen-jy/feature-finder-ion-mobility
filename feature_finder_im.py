@@ -40,6 +40,14 @@ class FeatureFinderIonMobility:
         self.im_start, self.im_end = 0, 0
         self.im_delta, self.im_offset = 0, 0
         self.im_scan_nums = [[], []]  # Keep the intensity-weighted average IM value for each bin
+        self.exps = [[], [ms.MSExperiment()]]  # To "cache" mzML writes
+
+    def reset_write_cache(self) -> None:
+        """Resets the disk write "cache"."""
+        for i in range(self.num_bins):
+            self.exps[0][i].clear(True)
+            self.exps[1][i].clear(True)
+        self.exps[1][self.num_bins].clear(True)
 
     def setup_bins(self, exp: ms.OnDiscMSExperiment) -> None:
         """Sets up the IM bins for feature finding.
@@ -49,10 +57,15 @@ class FeatureFinderIonMobility:
         """
         print('Getting IM bounds.', end=' ', flush=True)
         self.im_start, self.im_end = util.get_im_extrema(exp)
+        #self.im_start, self.im_end = 0.6011273264884949, 1.5448821783065796
 
         self.im_delta = self.im_end - self.im_start
         self.bin_size = self.im_delta / self.num_bins
         self.im_offset = self.im_start + self.bin_size / 2.0
+
+        for i in range(self.num_bins):
+            self.exps[0].append(ms.MSExperiment())
+            self.exps[1].append(ms.MSExperiment())
 
         print('Done', flush=True)
 
@@ -74,13 +87,11 @@ class FeatureFinderIonMobility:
 
         temp_bins = [[], [[]]]
         new_bins = [[], [[]]]
-        new_exps = [[], [ms.MSExperiment()]]
 
         for i in range(self.num_bins):
             for j in range(2):
                 temp_bins[j].append([])
                 new_bins[j].append([])
-                new_exps[j].append(ms.MSExperiment())
 
         for i in range(len(points)):  # Assign points to bins
             bin_idx = int((points[i][3] - self.im_start) / self.bin_size)
@@ -126,7 +137,7 @@ class FeatureFinderIonMobility:
             new_spec.setRT(spec.getRT())
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
             new_spec.setFloatDataArrays([im_fda])
-            new_exps[0][i].addSpectrum(new_spec)
+            self.exps[0][i].addSpectrum(new_spec)
 
         for i in range(self.num_bins + 1):  # Second pass
             if len(temp_bins[1][i]) == 0:
@@ -146,7 +157,6 @@ class FeatureFinderIonMobility:
                     mz_start, curr_mz = j, temp_bins[1][i][j][1]
                     running_intensity = temp_bins[1][i][j][2]
 
-
             point = list(temp_bins[1][i][mz_start])
             point[2] = running_intensity
             new_bins[1][i].append(point)
@@ -160,25 +170,28 @@ class FeatureFinderIonMobility:
             new_spec.setRT(spec.getRT())
             new_spec.set_peaks((list(transpose[1]), list(transpose[2])))
             new_spec.setFloatDataArrays([im_fda])
-            new_exps[1][i].addSpectrum(new_spec)
+            self.exps[1][i].addSpectrum(new_spec)
 
-        for i in range(self.num_bins):  # Write pass 1 to disk
-            exp = ms.MSExperiment()
+    def write_exps(self, dir) -> None:
+        """Writes the "cached" experiments to disk."""
+        exp = ms.MSExperiment()
+        for i in range(self.num_bins):
             try:
                 ms.MzMLFile().load(dir + '/b-0-' + str(i) + '.mzML', exp)
             except:
                 pass
-            util.combine_experiments(exp, new_exps[0][i])
+            util.combine_experiments(exp, self.exps[0][i])
             ms.MzMLFile().store(dir + '/b-0-' + str(i) + '.mzML', exp)
 
-        for i in range(self.num_bins + 1):  # Write pass 2 to disk
-            exp = ms.MSExperiment()
+        for i in range(self.num_bins + 1):
             try:
                 ms.MzMLFile().load(dir + '/b-1-' + str(i) + '.mzML', exp)
             except:
                 pass
-            util.combine_experiments(exp, new_exps[1][i])
+            util.combine_experiments(exp, self.exps[1][i])
             ms.MzMLFile().store(dir + '/b-1-' + str(i) + '.mzML', exp)
+
+        self.reset_write_cache()
 
     def compute_bin_im(self, run: int, bin: int, dir: str = '.') -> float:
         """Computes the intensity-weighted average IM value for a given bin.
@@ -557,14 +570,17 @@ class FeatureFinderIonMobility:
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'setup bins: {mem_use} GiB\n')
 
-        #print('Starting binning.', flush=True)
-        #if bench: start_t = time.time()
-        #for i in range(exp.getNrSpectra()):
-        #    spec = exp.getSpectrum(i)
-        #    if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
-        #        continue
-        #    print('Binning RT', spec.getRT(), flush=True)
-        #    self.bin_spectrum(spec, dir)
+        print('Starting binning.', flush=True)
+        if bench: start_t = time.time()
+        for i in range(exp.getNrSpectra()):
+            spec = exp.getSpectrum(i)
+            if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
+                continue
+            print('Binning RT', spec.getRT(), flush=True)
+            self.bin_spectrum(spec, dir)
+            if i % 1000 == 0:
+                self.write_exps(dir)
+        self.write_exps(dir)
 
         print('Getting bin average IM values.', end=' ', flush=True)
         for i in range(self.num_bins):
