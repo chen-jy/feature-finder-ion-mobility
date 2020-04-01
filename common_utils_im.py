@@ -87,3 +87,28 @@ def combine_experiments(exp1: ms.MSExperiment, exp2: ms.MSExperiment) -> None:
     for i in range(exp2.getNrSpectra()):
         spec = exp2.getSpectrum(i)
         exp1.addSpectrum(spec)
+
+
+def binary_search_left_rt(features: Any, target: float) -> int:
+    """Binary searches a list of features or feature map (sorted by ascending RT) for the first
+    (leftmost) feature with RT equal to (or less than) target.
+    
+    Keyword arguments:
+    features: sorted by ascending RT, either a list of lists (with RT as the first element) or a
+        feature map
+    target: the target RT to search for
+    """
+    if type(features) != list and type(features) != ms.FeatureMap:
+        return -1
+
+    lo, hi = 0, len(features) - 1 if type(features) == list else features.size() - 1
+    while lo < hi:
+        mid = int((lo + hi) / 2)
+        res = features[mid][0] if type(features) == list else features[mid].getRT()
+        
+        if res < target:
+            lo = mid + 1
+        else:
+            hi = mid
+
+    return lo - 1 if lo >= 1 else 0
