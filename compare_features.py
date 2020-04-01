@@ -106,23 +106,18 @@ def compare_features(features1: Any, features2: list, im_mode: bool = True, quie
             print('Comparing feature', j + 1, 'of', len(features2))
 
         num_common = 0
+        first_idx = util.binary_search_left_rt(features1, features2[j][0] - thresholds[0])
 
-        curr_rt = features2[j][0] - thresholds[0]
-        curr_idx = util.binary_search_left_rt(features1, curr_rt)
-        curr_rt = features1[curr_idx][0] if type(features1) == list else features1[curr_idx].getRT()
+        for i in range(first_idx, len(features1) if type(features1) == list else features1.size()):
+            f = features1[i]
+            if (f[0] if type(features1) == list else f.getRT()) > features2[j][0] + thresholds[0]:
+                break
 
-        while curr_rt <= features2[j][0] + thresholds[0]:
-            if (im_mode and util.similar_features_im(features1[curr_idx], features2[j], *thresholds)) or \
-                (not im_mode and util.similar_features(features1[curr_idx], features2[j], thresholds[0],
-                                                       thresholds[1])):
+            if (im_mode and util.similar_features_im(f, features2[j], *thresholds)) or (not im_mode and
+                    util.similar_features(f, features2[j], thresholds[0], thresholds[1])):
                 num_common += 1
                 if num_common > 1:
                     break
-
-            curr_idx += 1
-            if curr_idx == (len(features1) if type(features1) == list else features1.size()):
-                break
-            curr_rt = features1[curr_idx][0] if type(features1) == list else features1[curr_idx].getRT()
 
         if num_common == 0:
             times_matched[0] += 1
