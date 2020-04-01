@@ -112,3 +112,15 @@ def binary_search_left_rt(features: Any, target: float) -> int:
             hi = mid
 
     return lo - 1 if lo >= 1 else 0
+
+
+# I really wish python had simple function overloading
+def binary_search_left_rt2(features: List[Tuple[ms.Feature, int]], target: float) -> int:
+    lo, hi = 0, len(features)
+    while lo < hi:
+        mid = int((lo + hi) / 2)
+        if features[mid][0].getRT() < target:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo - 1 if lo >= 1 else 0
