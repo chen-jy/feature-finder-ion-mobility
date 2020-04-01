@@ -232,17 +232,24 @@ class FeatureFinderIonMobility:
 
         Returns: a matched set of features.
         """
+        features.sortByRT()
         matched = ms.FeatureMap()
+
         for i in range(features.size()):
             feature1 = features[i]
-            similar = []
             max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
             max_feature = feature1
+            
+            similar = []
+            first_idx = util.binary_search_left_rt(features, feature1.getRT() - self.RT_THRESHOLD)
 
-            for j in range(features.size()):
+            for j in range(first_idx, features.size()):
                 if i == j:
                     continue
                 feature2 = features[j]
+                if feature2.getRT() > feature1.getRT() + self.RT_THRESHOLD:
+                    break
+
                 if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                     similar.append(feature2)
 
@@ -274,6 +281,9 @@ class FeatureFinderIonMobility:
         matched = []  # All features
         not_unique = []  # Features found in at least two contiguous bins
 
+        for i in range(len(features)):
+            features[i].sortByRT()
+
         for bin_idx in range(len(features)):
             for i in range(features[bin_idx].size()):
                 if used[bin_idx][i]:
@@ -285,11 +295,15 @@ class FeatureFinderIonMobility:
 
                 while next_idx < len(features):
                     similar = []
-                    for j in range(features[next_idx].size()):
+                    first_idx = util.binary_search_left_rt(features[next_idx], feature1.getRT() - self.RT_THRESHOLD)
+
+                    for j in range(first_idx, features[next_idx].size()):
                         if used[next_idx][j]:
                             continue
-
                         feature2 = features[next_idx][j]
+                        if feature2.getRT() > feature1.getRT() + self.RT_THRESHOLD:
+                            break
+
                         if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD):
                             similar.append((feature2, j))
                             used[next_idx][j] = True
@@ -338,36 +352,50 @@ class FeatureFinderIonMobility:
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
 
+        #for i in range(len(features1)):
+        #    assert(all(features1[i][x].getRT() <= features1[i][x + 1].getRT() for x in range(features1[i].size())))
+        #for i in range(len(features2)):
+        #    assert(all(features2[i][x].getRT() <= features2[i][x + 1].getRT() for x in range(features2[i].size())))
+
+        a = time.time()
+
         used = [False] * len(pass2)
         feature_bins = []  # Holds (feature, IM)
 
+        pass2.sort(key=lambda x: x[0].getRT())
+
         for (feature1, bin1) in pass1:
             similar = []
-            for j in range(len(pass2)):
+            first_idx = util.binary_search_left_rt2(pass2, feature1.getRT() - self.RT_THRESHOLD)
+
+            for j in range(first_idx, len(pass2)):
                 if used[j]:
                     continue
-                feature2, bin2 = pass2[j][0], pass2[j][1]
+                feature2, bin2 = pass2[j]
+                if feature2.getRT() > feature1.getRT() + self.RT_THRESHOLD:
+                    break
+
                 if util.similar_features(feature1, feature2, self.RT_THRESHOLD, self.MZ_THRESHOLD) and \
-                    (bin1 == bin2 or bin1 + 1 == bin2):
-                    similar.append((feature2, bin2, j))
+                        (bin1 == bin2 or bin1 + 1 == bin2):
+                    similar.append((feature2, bin2))
                     used[j] = True
 
             max_area = util.polygon_area(feature1.getConvexHull().getHullPoints())
             max_feature = (feature1, self.im_scan_nums[0][bin1])
-            max_idx = -1
 
-            for (feature2, bin2, j) in similar:
+            for (feature2, bin2) in similar:
                 area = util.polygon_area(feature2.getConvexHull().getHullPoints())
                 if area > max_area:
                     max_area = area
                     max_feature = (feature2, self.im_scan_nums[1][bin2])
-                    max_idx = j
 
             feature_bins.append(max_feature)
 
         for j in range(len(pass2)):  # Features unique to the second pass
             if not used[j]:
                 feature_bins.append((pass2[j][0], self.im_scan_nums[1][pass2[j][1]]))
+
+        feature_bins.sort(key=lambda x: x[0].getRT())
 
         cleaned, clean_bins = ms.FeatureMap(), []  # Clean up potential duplicates
         used = [False] * len(feature_bins)
@@ -378,11 +406,16 @@ class FeatureFinderIonMobility:
             used[i] = True
 
             similar = []
-            for j in range(len(feature_bins)):
+            first_idx = util.binary_search_left_rt2(feature_bins, feature_bins[i][0].getRT() - self.RT_THRESHOLD)
+
+            for j in range(first_idx, len(feature_bins)):
                 if used[j]:
                     continue
+                if feature_bins[j][0].getRT() > feature_bins[i][0].getRT() + self.RT_THRESHOLD:
+                    break
+
                 if util.similar_features(feature_bins[i][0], feature_bins[j][0], self.RT_THRESHOLD,
-                                          self.MZ_THRESHOLD) and feature_bins[i][1] == feature_bins[j][1]:
+                                         self.MZ_THRESHOLD) and feature_bins[i][1] == feature_bins[j][1]:
                     similar.append(feature_bins[j])
                     used[j] = True
 
@@ -395,6 +428,8 @@ class FeatureFinderIonMobility:
 
             cleaned.push_back(max_feature[0])
             clean_bins.append(max_feature)
+
+        print(time.time() - a)
 
         return cleaned, clean_bins
 
@@ -562,7 +597,7 @@ class FeatureFinderIonMobility:
         self.num_bins = num_bins
 
         if bench: start_t = time.time()
-        self.setup_bins(exp)
+        #self.setup_bins(exp)
 
         if bench:
             total_t = time.time() - start_t
@@ -570,23 +605,36 @@ class FeatureFinderIonMobility:
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'setup bins: {mem_use} GiB\n')
 
-        print('Starting binning.', flush=True)
-        if bench: start_t = time.time()
-        for i in range(exp.getNrSpectra()):
-            spec = exp.getSpectrum(i)
-            if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
-                continue
-            print('Binning RT', spec.getRT(), flush=True)
-            self.bin_spectrum(spec, dir)
-            if i % 1000 == 0:
-                self.write_exps(dir)
-        self.write_exps(dir)
+        #print('Starting binning.', flush=True)
+        #if bench: start_t = time.time()
+        #for i in range(exp.getNrSpectra()):
+        #    spec = exp.getSpectrum(i)
+        #    if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
+        #        continue
+        #    print('Binning RT', spec.getRT(), flush=True)
+        #    self.bin_spectrum(spec, dir)
+        #    if i % 500 == 0:
+        #        self.write_exps(dir)
+        #self.write_exps(dir)
 
         print('Getting bin average IM values.', end=' ', flush=True)
-        for i in range(self.num_bins):
-            self.im_scan_nums[0].append(self.compute_bin_im(0, i, dir))
-            self.im_scan_nums[1].append(self.compute_bin_im(1, i, dir))
-        self.im_scan_nums[1].append(self.compute_bin_im(1, self.num_bins, dir))
+        #for i in range(self.num_bins):
+        #    self.im_scan_nums[0].append(self.compute_bin_im(0, i, dir))
+        #    self.im_scan_nums[1].append(self.compute_bin_im(1, i, dir))
+        #self.im_scan_nums[1].append(self.compute_bin_im(1, self.num_bins, dir))
+
+        #with open(dir + '/im-bins.txt', 'w') as file:
+        #    for i in range(self.num_bins):
+        #        file.write(str(self.im_scan_nums[0][i]) + '\n')
+        #    for i in range(self.num_bins + 1):
+        #        file.write(str(self.im_scan_nums[1][i]) + '\n')
+        with open(dir + '/im-bins.txt', 'r') as file:
+            for i in range(self.num_bins):
+                x = float(file.readline().strip())
+                self.im_scan_nums[0].append(x)
+            for i in range(self.num_bins + 1):
+                x = float(file.readline().strip())
+                self.im_scan_nums[1].append(x)
         print('Done')
 
         if bench:
@@ -597,8 +645,17 @@ class FeatureFinderIonMobility:
 
         print('Starting feature finding.', end=' ', flush=True)
         if bench: start_t = time.time()
-        features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
-                                                  debug)
+        #features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
+        #                                          debug)
+        features1, features2 = [], []
+        for i in range(self.num_bins):
+            x = ms.FeatureMap()
+            ms.FeatureXMLFile().load(dir + '/pass0-bin' + str(i) + '.featureXML', x)
+            features1.append(x)
+        for i in range(self.num_bins + 1):
+            x = ms.FeatureMap()
+            ms.FeatureXMLFile().load(dir + '/pass1-bin' + str(i) + '.featureXML', x)
+            features2.append(x)
         print('Done')
 
         if bench:
@@ -648,7 +705,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-i', '--in', action='store', required=True, type=str, dest='in_',
                         help='the input mzML file')
-    parser.add_argument('-o', '--out', action='store', required=True, type=str,
+    parser.add_argument('-o', '--out', action='store', required=False, type=str, default='features.featureXML',
                         help='the output featureXML file')
     parser.add_argument('-d', '--dir', action='store', required=False, type=str, default='.',
                         help='the output directory')
