@@ -83,7 +83,7 @@ class FeatureFinderIonMobility:
         dir: the directory to write and read temporary files to
         """
         points = util.get_spectrum_points(spec)
-        points = sorted(points, key=itemgetter(3))  # Ascending IM
+        points.sort(key=itemgetter(3))  # Ascending IM
 
         temp_bins = [[], [[]]]
         new_bins = [[], [[]]]
@@ -110,7 +110,7 @@ class FeatureFinderIonMobility:
             if len(temp_bins[0][i]) == 0:
                 continue
 
-            temp_bins[0][i] = sorted(temp_bins[0][i], key=itemgetter(1))  # Ascending m/z
+            temp_bins[0][i].sort(key=itemgetter(1))  # Ascending m/z
             mz_start, curr_mz = 0, temp_bins[0][i][0][1]
             running_intensity = 0
 
@@ -143,7 +143,7 @@ class FeatureFinderIonMobility:
             if len(temp_bins[1][i]) == 0:
                 continue
 
-            temp_bins[1][i] = sorted(temp_bins[1][i], key=itemgetter(1))
+            temp_bins[1][i].sort(key=itemgetter(1))
             mz_start, curr_mz = 0, temp_bins[1][i][0][1]
             running_intensity = 0
 
@@ -351,11 +351,6 @@ class FeatureFinderIonMobility:
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
-
-        #for i in range(len(features1)):
-        #    assert(all(features1[i][x].getRT() <= features1[i][x + 1].getRT() for x in range(features1[i].size())))
-        #for i in range(len(features2)):
-        #    assert(all(features2[i][x].getRT() <= features2[i][x + 1].getRT() for x in range(features2[i].size())))
 
         a = time.time()
 
@@ -597,7 +592,7 @@ class FeatureFinderIonMobility:
         self.num_bins = num_bins
 
         if bench: start_t = time.time()
-        #self.setup_bins(exp)
+        self.setup_bins(exp)
 
         if bench:
             total_t = time.time() - start_t
@@ -605,36 +600,36 @@ class FeatureFinderIonMobility:
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'setup bins: {mem_use} GiB\n')
 
-        #print('Starting binning.', flush=True)
-        #if bench: start_t = time.time()
-        #for i in range(exp.getNrSpectra()):
-        #    spec = exp.getSpectrum(i)
-        #    if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
-        #        continue
-        #    print('Binning RT', spec.getRT(), flush=True)
-        #    self.bin_spectrum(spec, dir)
-        #    if i % 500 == 0:
-        #        self.write_exps(dir)
-        #self.write_exps(dir)
+        print('Starting binning.', flush=True)
+        if bench: start_t = time.time()
+        for i in range(exp.getNrSpectra()):
+            spec = exp.getSpectrum(i)
+            if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
+                continue
+            print('Binning RT', spec.getRT(), flush=True)
+            self.bin_spectrum(spec, dir)
+            if i % 1000 == 0:
+                self.write_exps(dir)
+        self.write_exps(dir)
 
         print('Getting bin average IM values.', end=' ', flush=True)
-        #for i in range(self.num_bins):
-        #    self.im_scan_nums[0].append(self.compute_bin_im(0, i, dir))
-        #    self.im_scan_nums[1].append(self.compute_bin_im(1, i, dir))
-        #self.im_scan_nums[1].append(self.compute_bin_im(1, self.num_bins, dir))
+        for i in range(self.num_bins):
+            self.im_scan_nums[0].append(self.compute_bin_im(0, i, dir))
+            self.im_scan_nums[1].append(self.compute_bin_im(1, i, dir))
+        self.im_scan_nums[1].append(self.compute_bin_im(1, self.num_bins, dir))
 
-        #with open(dir + '/im-bins.txt', 'w') as file:
-        #    for i in range(self.num_bins):
-        #        file.write(str(self.im_scan_nums[0][i]) + '\n')
-        #    for i in range(self.num_bins + 1):
-        #        file.write(str(self.im_scan_nums[1][i]) + '\n')
-        with open(dir + '/im-bins.txt', 'r') as file:
+        with open(dir + '/bins-im.txt', 'w') as file:
             for i in range(self.num_bins):
-                x = float(file.readline().strip())
-                self.im_scan_nums[0].append(x)
+                file.write(str(self.im_scan_nums[0][i]) + '\n')
             for i in range(self.num_bins + 1):
-                x = float(file.readline().strip())
-                self.im_scan_nums[1].append(x)
+                file.write(str(self.im_scan_nums[1][i]) + '\n')
+        #with open(dir + '/bins-im.txt', 'r') as file:
+        #    for i in range(self.num_bins):
+        #        x = float(file.readline().strip())
+        #        self.im_scan_nums[0].append(x)
+        #    for i in range(self.num_bins + 1):
+        #        x = float(file.readline().strip())
+        #        self.im_scan_nums[1].append(x)
         print('Done')
 
         if bench:
@@ -645,17 +640,17 @@ class FeatureFinderIonMobility:
 
         print('Starting feature finding.', end=' ', flush=True)
         if bench: start_t = time.time()
-        #features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
-        #                                          debug)
-        features1, features2 = [], []
-        for i in range(self.num_bins):
-            x = ms.FeatureMap()
-            ms.FeatureXMLFile().load(dir + '/pass0-bin' + str(i) + '.featureXML', x)
-            features1.append(x)
-        for i in range(self.num_bins + 1):
-            x = ms.FeatureMap()
-            ms.FeatureXMLFile().load(dir + '/pass1-bin' + str(i) + '.featureXML', x)
-            features2.append(x)
+        features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
+                                                  debug)
+        #features1, features2 = [], []
+        #for i in range(self.num_bins):
+        #    x = ms.FeatureMap()
+        #    ms.FeatureXMLFile().load(dir + '/pass0-bin' + str(i) + '.featureXML', x)
+        #    features1.append(x)
+        #for i in range(self.num_bins + 1):
+        #    x = ms.FeatureMap()
+        #    ms.FeatureXMLFile().load(dir + '/pass1-bin' + str(i) + '.featureXML', x)
+        #    features2.append(x)
         print('Done')
 
         if bench:
@@ -681,7 +676,7 @@ class FeatureFinderIonMobility:
             time_out.write(f'feature matching: {mem_use} GiB\n')
 
         indexed_bins = [[f.getRT(), f.getMZ(), bin] for f, bin in feature_bins]
-        with open(dir + '/feature-bins.csv', 'w', newline='') as file:
+        with open(dir + '/features-im.csv', 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['RT', 'm/z', 'im'])
             writer.writerows(indexed_bins)
@@ -759,7 +754,7 @@ if __name__ == "__main__":
         time_out.write(f'mzml load: {total_t}s\n')
         time_out.close()
 
-    ff = FeatureFinderIonMobility()
+    ff = FeatureFinderIonMobility()  # TODO: use pyopenms's parameter class or make a new one
     features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
                       args.ff_type, args.dir, args.filter, args.debug, args.bench)
 
