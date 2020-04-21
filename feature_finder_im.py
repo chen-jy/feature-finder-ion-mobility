@@ -7,7 +7,7 @@ import argparse
 import csv
 from operator import itemgetter
 import os
-import psutil
+import psutil  # Can be removed if benchmarking is not required
 import time
 from typing import List, Optional, Tuple
 
@@ -57,7 +57,7 @@ class FeatureFinderIonMobility:
         """
         print('Getting IM bounds.', end=' ', flush=True)
         self.im_start, self.im_end = util.get_im_extrema(exp)
-        #self.im_start, self.im_end = 0.6011273264884949, 1.5448821783065796
+        #self.im_start, self.im_end = 0.6011273264884949, 1.5448821783065796  # For debugging 2768-800-860.mzML
 
         self.im_delta = self.im_end - self.im_start
         self.bin_size = self.im_delta / self.num_bins
@@ -73,20 +73,17 @@ class FeatureFinderIonMobility:
         """Checks if var is within the m/z epsilon of target."""
         return target - self.MZ_EPSILON <= var <= target + self.MZ_EPSILON
 
-    def bin_spectrum(self, spec: ms.MSSpectrum, dir: str = '.') -> None:
+    def bin_spectrum(self, spec: ms.MSSpectrum) -> None:
         """Bins a single spectrum in two passes.
-
-        Results are written to disk.
 
         Keyword arguments:
         spec: the spectrum to bin
-        dir: the directory to write and read temporary files to
         """
         points = util.get_spectrum_points(spec)
         points.sort(key=itemgetter(3))  # Ascending IM
 
-        temp_bins = [[], [[]]]
-        new_bins = [[], [[]]]
+        temp_bins = [[], [[]]]  # 2D spectra
+        new_bins = [[], [[]]]  # Final 1D spectra
 
         for i in range(self.num_bins):
             for j in range(2):
@@ -118,7 +115,7 @@ class FeatureFinderIonMobility:
                 if self.within_epsilon(curr_mz, temp_bins[0][i][j][1]):
                     running_intensity += temp_bins[0][i][j][2]
                 else:  # Reached a new m/z slice
-                    point = list(temp_bins[0][i][mz_start])
+                    point = list(temp_bins[0][i][mz_start])  # Prevents aliasing
                     point[2] = running_intensity
                     new_bins[0][i].append(point)
                     mz_start, curr_mz = j, temp_bins[0][i][j][1]
@@ -172,9 +169,9 @@ class FeatureFinderIonMobility:
             new_spec.setFloatDataArrays([im_fda])
             self.exps[1][i].addSpectrum(new_spec)
 
-    def write_exps(self, dir) -> None:
+    def write_exps(self, dir: str) -> None:
         """Writes the "cached" experiments to disk."""
-        exp = ms.MSExperiment()
+        exp = ms.MSExperiment()  # Maybe use an OnDiscExperiment?
         for i in range(self.num_bins):
             try:
                 ms.MzMLFile().load(dir + '/b-0-' + str(i) + '.mzML', exp)
@@ -225,7 +222,7 @@ class FeatureFinderIonMobility:
         """Matches features in a single bin; intended to correct satellite features.
 
         The feature in each feature set with the largest convex hull becomes the 'representative'
-        feature of that set.
+        feature of that set and the rest are discarded.
 
         Keyword arguments:
         features: the features of a single bin for intra-bin matching
@@ -279,7 +276,7 @@ class FeatureFinderIonMobility:
             used.append([False] * features[bin_idx].size())
 
         matched = []  # All features
-        not_unique = []  # Features found in at least two contiguous bins
+        not_unique = []  # Features found in at least two contiguous bins (for debugging)
 
         for i in range(len(features)):
             features[i].sortByRT()
@@ -293,7 +290,7 @@ class FeatureFinderIonMobility:
                 feature_indices = [(bin_idx, i)]
                 next_idx = bin_idx + 1
 
-                while next_idx < len(features):
+                while next_idx < len(features):  # Try to extend the chain
                     similar = []
                     first_idx = util.binary_search_left_rt(features[next_idx], feature1.getRT() - self.RT_THRESHOLD)
 
@@ -347,12 +344,10 @@ class FeatureFinderIonMobility:
 
         Returns: the matched feature map, as well as a list of features and their IM values
             (corresponding to the average IM value of the bin that each feature is located in; we
-            can't use the exact IM value because they are not computed by the feature finders).
+            can't use the exact IM value because they aren't computed by existing feature finders).
         """
         pass1 = self.match_features_pass(features1)  # List[(ms.Feature, int)]
         pass2 = self.match_features_pass(features2)  # Interior tuples are (feature, bin index)
-
-        a = time.time()
 
         used = [False] * len(pass2)
         feature_bins = []  # Holds (feature, IM)
@@ -392,7 +387,7 @@ class FeatureFinderIonMobility:
 
         feature_bins.sort(key=lambda x: x[0].getRT())
 
-        cleaned, clean_bins = ms.FeatureMap(), []  # Clean up potential duplicates
+        cleaned, clean_bins = ms.FeatureMap(), []  # Clean up potential duplicates (similar to match_features_internal)
         used = [False] * len(feature_bins)
 
         for i in range(len(feature_bins)):
@@ -421,10 +416,8 @@ class FeatureFinderIonMobility:
                 if area > max_area:
                     max_feature, max_area = feature, area
 
-            cleaned.push_back(max_feature[0])
-            clean_bins.append(max_feature)
-
-        print(time.time() - a)
+            cleaned.push_back(max_feature[0])  # The final matched and cleaned feature map
+            clean_bins.append(max_feature)  # The final list of features and their IM values
 
         return cleaned, clean_bins
 
@@ -493,7 +486,7 @@ class FeatureFinderIonMobility:
             their bins.
         """
         features = [[], []]
-        total_features = [ms.FeatureMap(), ms.FeatureMap()]
+        total_features = [ms.FeatureMap(), ms.FeatureMap()]  # Only used for debug output
 
         if filter == 'gauss':
             filter_g = ms.GaussFilter()
@@ -512,7 +505,7 @@ class FeatureFinderIonMobility:
         pick_hr = ms.PeakPickerHiRes()
         pick_im = ppim.PeakPickerIonMobility()
 
-        nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]
+        nb = [self.num_bins, 0 if self.num_bins == 1 else self.num_bins + 1]  # Size of each pass
 
         for j in range(2):  # Pass index
             for i in range(nb[j]):  # Bin index
@@ -607,8 +600,8 @@ class FeatureFinderIonMobility:
             if spec.getMSLevel() != 1:  # Currently only works on MS1 scans
                 continue
             print('Binning RT', spec.getRT(), flush=True)
-            self.bin_spectrum(spec, dir)
-            if i % 1000 == 0:
+            self.bin_spectrum(spec)
+            if i % 500 == 0:  # Requires slightly less than 16 GiB of RAM on a full-length run
                 self.write_exps(dir)
         self.write_exps(dir)
 
@@ -623,7 +616,7 @@ class FeatureFinderIonMobility:
                 file.write(str(self.im_scan_nums[0][i]) + '\n')
             for i in range(self.num_bins + 1):
                 file.write(str(self.im_scan_nums[1][i]) + '\n')
-        #with open(dir + '/bins-im.txt', 'r') as file:
+        #with open(dir + '/bins-im.txt', 'r') as file:  # To speed up debugging
         #    for i in range(self.num_bins):
         #        x = float(file.readline().strip())
         #        self.im_scan_nums[0].append(x)
@@ -638,11 +631,11 @@ class FeatureFinderIonMobility:
             mem_use = pymem.memory_info()[0] / 2.0 ** 30
             time_out.write(f'binning: {mem_use} GiB\n')
 
-        print('Starting feature finding.', end=' ', flush=True)
+        print('Starting feature finding.', flush=True)
         if bench: start_t = time.time()
         features1, features2 = self.find_features(pp_type, peak_radius, window_radius, pp_mode, ff_type, dir, filter,
                                                   debug)
-        #features1, features2 = [], []
+        #features1, features2 = [], []  # To speed up debugging
         #for i in range(self.num_bins):
         #    x = ms.FeatureMap()
         #    ms.FeatureXMLFile().load(dir + '/pass0-bin' + str(i) + '.featureXML', x)
@@ -661,7 +654,7 @@ class FeatureFinderIonMobility:
 
         if self.num_bins == 1:  # Matching between passes for one bin results in no features
             features1[0].setUniqueIds()
-            return features1[0]
+            return features1[0]  # TODO: also output the bin IMs as a csv file
 
         print('Starting feature matching.', end=' ', flush=True)
         if bench: start_t = time.time()
@@ -754,7 +747,7 @@ if __name__ == "__main__":
         time_out.write(f'mzml load: {total_t}s\n')
         time_out.close()
 
-    ff = FeatureFinderIonMobility()  # TODO: use pyopenms's parameter class or make a new one
+    ff = FeatureFinderIonMobility()
     features = ff.run(exp, args.num_bins, args.pp_type, args.peak_radius, args.window_radius, args.pp_mode,
                       args.ff_type, args.dir, args.filter, args.debug, args.bench)
 

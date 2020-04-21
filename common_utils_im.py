@@ -97,6 +97,8 @@ def binary_search_left_rt(features: Any, target: float) -> int:
     features: sorted by ascending RT, either a list of lists (with RT as the first element) or a
         feature map
     target: the target RT to search for
+
+    Returns: the index of the first element with RT less than or equal to target.
     """
     if type(features) != list and type(features) != ms.FeatureMap:
         return -1
@@ -116,6 +118,15 @@ def binary_search_left_rt(features: Any, target: float) -> int:
 
 # I really wish python had simple function overloading
 def binary_search_left_rt2(features: List[Tuple[ms.Feature, int]], target: float) -> int:
+    """Binary searches a list of features for the first (leftmost) feature with RT equal to (or
+    less than) target.
+    
+    Keyword arguments:
+    features: a list of tuples of features and their bin indices, sorted by ascending RT
+    target: the target RT to search for
+
+    Returns: the index of the first element with RT less than or equal to target.
+    """
     lo, hi = 0, len(features)
     while lo < hi:
         mid = int((lo + hi) / 2)

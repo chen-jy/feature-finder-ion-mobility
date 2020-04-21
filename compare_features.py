@@ -13,10 +13,8 @@ import common_utils_im as util
 
 # For file writing
 output_file = ''
-
 # Global statistics
 times_matched = [0, 0, 0]  # Zero matches, one match, multiple matches
-
 # Program parameters
 thresholds = []
 
@@ -30,7 +28,7 @@ def reset_stats() -> None:
 def csv_to_list(input_filename: str) -> List[List[float]]:
     """Reads a csv file and extracts its feature data.
 
-    The csv file must be formatted like this: Retention time, mass to charge, ion mobility index
+    The csv file must be formatted like this: Retention time, mass to charge, ion mobility
 
     Keyword arguments:
     input_filename: the csv file to read from
@@ -67,18 +65,6 @@ def print_summary() -> None:
         f.write('One match: %d\n' % times_matched[1])
         print('Multiple matches:', times_matched[2])
         f.write('Multiple matches: %d\n' % times_matched[2])
-
-
-def convert_to_bidx(im: float) -> int:
-    """Converts an ion mobility value (1/k0) to its bin index.
-    
-    Keyword arguments:
-    im: the ion mobility value to convert
-
-    Returns: the bin index in which the IM value would exist.
-    """
-    idx = int((im - im_start) / ((im_stop - im_start) / num_bins))
-    return idx if idx < num_bins else num_bins - 1
 
 
 def compare_features(features1: Any, features2: list, im_mode: bool = True, quiet: bool = True) -> None:
@@ -161,7 +147,7 @@ if __name__ == '__main__':
     if not input_is_csv and not args.in_.endswith('featureXML'):
         print('Error: input features must be in csv or featureXML formats')
         exit(1)
-    if not ref_is_csv:
+    if not ref_is_csv:  # TODO: Add more comparison formats
         print('Error: comparison currently requires reference features in csv format')
         exit(1)
 
