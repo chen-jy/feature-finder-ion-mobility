@@ -2,6 +2,8 @@
 
 An approach to four-dimensional mass spectrometry feature finding (retention time, mass-to-charge, intensity, and ion mobility).
 
+*Warning: the modules here have only been tested with pyOpenMS 2.4.0 (and OpenMS 2.4.0). In addition, analyzing full-length mass spectrometry runs (120 min/~12 GiB files) may take several days to complete, depending on the target machine.*
+
 Descriptions of python modules (run each with --help for individual arguments):
 
 **feature_finder_im**: the LC-IMS-MS/MS feature finder. Works by binning each RT spectrum in the raw data by IM, linking all the respective binned spectra together, running an OpenMS feature finder (with optional noise filtering and peak picking) on each bin, then matching all the resulting features together.
